@@ -1,0 +1,8 @@
+.env
+.auth/
+Cursor Usage.app/
+macos/.build/
+.DS_Store
+.venv/
+__pycache__/
+*.pyc
