@@ -3,21 +3,64 @@ import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBar: StatusBarController?
+    private var splash: LaunchSplashController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
-        MainActor.assumeIsolated {
-            SessionTokenStore.migrateFromLegacyEnvIfNeeded()
-            let viewModel = UsageViewModel()
-            let controller = StatusBarController(viewModel: viewModel)
-            controller.install()
-            statusBar = controller
-            viewModel.startAutoRefresh()
+        AppMainMenu.install()
+        splash = LaunchSplashController()
+        splash?.show()
+        Task { @MainActor in
+            await self.finishLaunchingOnMainActor()
         }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    @MainActor
+    private func finishLaunchingOnMainActor() async {
+        let splash = self.splash
+
+        splash?.setStatus("Checking saved session…", detail: "Looking for an existing token on this Mac.")
+        await Task.yield()
+        SessionTokenStore.migrateFromLegacyEnvIfNeeded()
+
+        splash?.setStatus("Preparing menu bar…", detail: "This app runs from the menu bar, not the Dock.")
+        await Task.yield()
+        let viewModel = UsageViewModel()
+
+        splash?.setStatus("Starting menu bar icon…")
+        await Task.yield()
+        let controller = StatusBarController(viewModel: viewModel)
+        controller.install()
+        statusBar = controller
+        viewModel.startAutoRefresh()
+
+        if viewModel.needsSetup {
+            markFirstLaunchHintSeen()
+            splash?.setStatus(
+                "Opening setup…",
+                detail: "Paste your WorkosCursorSessionToken next. On MacBook Air, use › in the menu bar if the gear is hidden."
+            )
+        } else {
+            splash?.setStatus("Connecting to Cursor…", detail: "Fetching your usage summary.")
+            await viewModel.waitForInitialLoadIfNeeded()
+            splash?.setStatus("Ready", detail: "Find your usage % in the menu bar.")
+        }
+
+        await Task.yield()
+        splash?.dismiss { [weak self] in
+            NSApp.setActivationPolicy(.accessory)
+            if viewModel.needsSetup {
+                controller.presentSetupPanelIfNeeded()
+            }
+            self?.splash = nil
+        }
+    }
+
+    private func markFirstLaunchHintSeen() {
+        UserDefaults.standard.set(true, forKey: "didShowMenuBarSetupHint")
     }
 }
 
@@ -25,15 +68,14 @@ extension Notification.Name {
     static let menuBarAppearanceDidChange = Notification.Name("MenuBarAppearanceDidChange")
 }
 
+/// Pure AppKit entry — avoids SwiftUI `Settings` scene hangs on other Macs.
 @main
-struct CursorUsageMenuBarApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-
-    var body: some Scene {
-        Settings {
-            EmptyView()
-                .frame(width: 0, height: 0)
-        }
+enum CursorUsageMenuBarMain {
+    static func main() {
+        let app = NSApplication.shared
+        let delegate = AppDelegate()
+        app.delegate = delegate
+        app.run()
     }
 }
 
@@ -45,6 +87,7 @@ final class UsageViewModel: ObservableObject {
     @Published private(set) var needsSetup: Bool
     @Published var isEditingSession = false
     @Published var sessionTokenInput = ""
+    @Published private(set) var tokenFieldFocusToken = 0
     @Published private(set) var sessionSaveError: String?
     @Published private(set) var isSavingSession = false
     @Published var refreshInterval: RefreshInterval = .stored {
@@ -90,6 +133,11 @@ final class UsageViewModel: ObservableObject {
         sessionTokenInput = SessionTokenStore.load() ?? ""
         sessionSaveError = nil
         isEditingSession = true
+        requestTokenFieldFocus()
+    }
+
+    func requestTokenFieldFocus() {
+        tokenFieldFocusToken += 1
     }
 
     func cancelEditingSession() {
@@ -176,7 +224,7 @@ final class UsageViewModel: ObservableObject {
             }
 
             do {
-                let data = try await UsageFetcher.fetch()
+                let data = try await UsageFetcher.fetchOffMainActor()
                 snapshot = data
                 error = nil
             } catch let err {
@@ -189,5 +237,22 @@ final class UsageViewModel: ObservableObject {
         }
 
         await fetchTask?.value
+    }
+
+    /// Keeps the launch splash visible until the first usage fetch finishes or times out.
+    func waitForInitialLoadIfNeeded() async {
+        guard !needsSetup else { return }
+        let deadline = Date().addingTimeInterval(45)
+
+        for _ in 0..<30 {
+            if isLoading || fetchTask != nil || snapshot != nil || error != nil { break }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+
+        while Date() < deadline {
+            if snapshot != nil || error != nil { return }
+            if !isLoading && fetchTask == nil { return }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
     }
 }

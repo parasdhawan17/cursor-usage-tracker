@@ -27,10 +27,14 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 	<string>com.local.cursor-usage-tracker</string>
 	<key>CFBundleName</key>
 	<string>Cursor Usage</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>1.0.6</string>
+	<key>CFBundleVersion</key>
+	<string>1.0.6</string>
 	<key>LSUIElement</key>
 	<true/>
 	<key>LSMinimumSystemVersion</key>
@@ -38,6 +42,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </dict>
 </plist>
 PLIST
+
+"$ROOT/scripts/bundle-app-resources.sh" "$APP"
 
 echo "Launching Cursor Usage (menu bar only, no Dock icon)…"
 open -a "$APP"

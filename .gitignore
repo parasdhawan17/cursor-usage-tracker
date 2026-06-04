@@ -1,6 +1,8 @@
 .env
 .auth/
 Cursor Usage.app/
+dist/
+AppIcon/CursorUsage.iconset/
 macos/.build/
 .DS_Store
 .venv/

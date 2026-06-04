@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SetupContentView: View {
     @Binding var tokenInput: String
+    var tokenFieldFocusToken: Int
     let saveError: String?
     let isSaving: Bool
     let onSave: () -> Void
@@ -25,9 +26,20 @@ struct SetupContentView: View {
                 Text("Session token")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.textSecondary)
-                SecureField("WorkosCursorSessionToken value", text: $tokenInput)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 12, design: .monospaced))
+                TokenInputField(text: $tokenInput, focusToken: tokenFieldFocusToken)
+                    .frame(height: 24)
+                HStack(spacing: 8) {
+                    Button("Paste from clipboard") {
+                        if let pasted = PasteboardToken.readString() {
+                            tokenInput = pasted
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    Text("or press ⌘V")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.textSecondary)
+                }
             }
 
             if let saveError {

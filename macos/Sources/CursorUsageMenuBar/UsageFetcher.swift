@@ -98,11 +98,22 @@ enum UsageFetcher {
     }
 
     static func fetch() async throws -> UsageSnapshot {
+        try await fetchOffMainActor()
+    }
+
+    /// Network + JSON parsing off the main actor so the menu bar UI stays responsive.
+    static func fetchOffMainActor() async throws -> UsageSnapshot {
+        try await Task.detached(priority: .utility) {
+            try await fetchImpl()
+        }.value
+    }
+
+    private static func fetchImpl() async throws -> UsageSnapshot {
         guard let token = loadToken() else { throw UsageFetcherError.missingToken }
 
         var request = URLRequest(url: base.appendingPathComponent("api/usage-summary"))
         request.setValue("\(cookieName)=\(token)", forHTTPHeaderField: "Cookie")
-        request.timeoutInterval = 30
+        request.timeoutInterval = 20
 
         let (data, response): (Data, URLResponse)
         do {

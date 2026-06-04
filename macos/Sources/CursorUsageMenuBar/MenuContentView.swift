@@ -3,6 +3,7 @@ import SwiftUI
 struct MenuContentView: View {
     let showsSetup: Bool
     @Binding var sessionTokenInput: String
+    let tokenFieldFocusToken: Int
     let sessionSaveError: String?
     let isSavingSession: Bool
     let onSaveSession: () -> Void
@@ -33,7 +34,13 @@ struct MenuContentView: View {
                 .padding(.vertical, 12)
         }
         .frame(width: 300)
+        .fixedSize(horizontal: false, vertical: true)
         .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Theme.sectionBorder, lineWidth: 0.5)
+        )
     }
 
     private var header: some View {
@@ -65,6 +72,7 @@ struct MenuContentView: View {
         if showsSetup {
             SetupContentView(
                 tokenInput: $sessionTokenInput,
+                tokenFieldFocusToken: tokenFieldFocusToken,
                 saveError: sessionSaveError,
                 isSaving: isSavingSession,
                 onSave: onSaveSession,
@@ -320,6 +328,13 @@ struct MenuContentView: View {
                 Link("Dashboard", destination: URL(string: "https://cursor.com/dashboard/usage")!)
                     .font(.system(size: 11))
             }
+            Button("Quit Cursor Usage") {
+                NSApp.terminate(nil)
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 11))
+            .foregroundStyle(Theme.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.top, 2)
     }
