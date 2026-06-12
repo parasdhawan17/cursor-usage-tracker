@@ -8,7 +8,7 @@ private final class KeyablePanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-/// Owns the NSStatusItem — menu bar shows usage % as plain text.
+/// Owns the NSStatusItem — menu bar shows "C 32%" text.
 @MainActor
 final class StatusBarController: NSObject {
     private static let panelWidth: CGFloat = 300

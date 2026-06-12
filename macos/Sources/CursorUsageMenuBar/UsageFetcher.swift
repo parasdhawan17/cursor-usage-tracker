@@ -47,8 +47,8 @@ struct UsageSnapshot: Equatable {
     }
 
     var menuBarLabel: String {
-        if isUnlimited { return "∞" }
-        return Self.formatPercent(primaryPercent)
+        if isUnlimited { return "C ∞" }
+        return "C \(Self.formatPercent(primaryPercent))"
     }
 
     var menuBarToolTip: String {
