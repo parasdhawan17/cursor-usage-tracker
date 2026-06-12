@@ -4,6 +4,16 @@ A lightweight, unofficial tool for monitoring your [Cursor](https://cursor.com) 
 
 > **Unofficial.** These endpoints are not documented by Cursor and can change at any time. Use your own account only. This project is not affiliated with or endorsed by Cursor.
 
+## Screenshots
+
+### Usage dashboard
+
+![Cursor Usage panel showing plan usage, costs, and model split](docs/screenshots/usage-panel.png)
+
+### First-time setup
+
+![Connect your account — paste your session token](docs/screenshots/setup-panel.png)
+
 ## Features
 
 ### macOS menu bar app
