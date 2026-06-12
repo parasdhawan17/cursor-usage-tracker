@@ -35,8 +35,8 @@ Scriptable access to the same data — useful for logging, automation, or quick 
 **Requirements:** [Xcode Command Line Tools](https://developer.apple.com/xcode/resources/) (`xcode-select --install`)
 
 ```bash
-git clone git@github.com:parasdhawan17/AI-Usage-Tracker.git
-cd AI-Usage-Tracker
+git clone git@github.com:parasdhawan17/cursor-usage-tracker.git
+cd cursor-usage-tracker
 ./run-menubar.sh
 ```
 
