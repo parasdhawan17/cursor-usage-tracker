@@ -6,13 +6,18 @@ A lightweight, unofficial tool for monitoring your [Cursor](https://cursor.com) 
 
 ## Screenshots
 
-### Usage dashboard
-
-![Cursor Usage panel showing plan usage, costs, and model split](docs/screenshots/usage-panel.png)
-
-### First-time setup
-
-![Connect your account — paste your session token](docs/screenshots/setup-panel.png)
+<table>
+  <tr>
+    <td align="center" valign="top">
+      <strong>Usage dashboard</strong><br><br>
+      <img src="docs/screenshots/usage-panel.png" alt="Cursor Usage panel showing plan usage, costs, and model split" width="280">
+    </td>
+    <td align="center" valign="top">
+      <strong>First-time setup</strong><br><br>
+      <img src="docs/screenshots/setup-panel.png" alt="Connect your account — paste your session token" width="280">
+    </td>
+  </tr>
+</table>
 
 ## Features
 
