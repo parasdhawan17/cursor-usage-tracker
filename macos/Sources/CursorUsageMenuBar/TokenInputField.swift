@@ -13,7 +13,7 @@ struct TokenInputField: NSViewRepresentable {
         field.isBordered = true
         field.bezelStyle = .roundedBezel
         field.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        field.placeholderString = "WorkosCursorSessionToken value"
+        field.placeholderString = "Paste token here"
         field.delegate = context.coordinator
         field.cell?.wraps = false
         field.cell?.isScrollable = true

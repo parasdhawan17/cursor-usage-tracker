@@ -12,6 +12,7 @@ private final class KeyablePanel: NSPanel {
 @MainActor
 final class StatusBarController: NSObject {
     private static let panelWidth: CGFloat = 300
+    private static let setupPanelWidth: CGFloat = 320
 
     private let viewModel: UsageViewModel
     private let statusItem: NSStatusItem
@@ -138,7 +139,7 @@ final class StatusBarController: NSObject {
         }
 
         let label = viewModel.menuBarLabel
-        button.toolTip = "Cursor Usage — \(label)"
+        button.toolTip = viewModel.menuBarToolTip
         button.image = nil
         button.imagePosition = .noImage
         button.title = label
@@ -237,7 +238,7 @@ final class StatusBarController: NSObject {
         let visible = screen.visibleFrame
         let anchor = screenFrame(of: button, on: screen)
 
-        let width = Self.panelWidth
+        let width = viewModel.showsSetupPanel ? Self.setupPanelWidth : Self.panelWidth
         let gap: CGFloat = 8
         let height = measuredContentHeight(width: width)
 

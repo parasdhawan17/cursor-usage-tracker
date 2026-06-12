@@ -18,6 +18,15 @@ struct MenuContentView: View {
     @Binding var refreshInterval: RefreshInterval
     let onRefresh: () -> Void
 
+    @State private var usageCostPeriod: UsageCostPeriod = .today
+
+    private enum UsageCostPeriod: String, CaseIterable, Identifiable {
+        case today = "Today"
+        case cycle = "This cycle"
+
+        var id: String { rawValue }
+    }
+
     private static let updatedFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateStyle = .medium
@@ -33,7 +42,7 @@ struct MenuContentView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
         }
-        .frame(width: 300)
+        .frame(width: showsSetup ? 320 : 300)
         .fixedSize(horizontal: false, vertical: true)
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -44,8 +53,13 @@ struct MenuContentView: View {
     }
 
     private var header: some View {
-        HStack {
-            Text(showsSetup ? "Setup" : "Cursor Usage")
+        HStack(spacing: 6) {
+            if showsSetup {
+                Image(systemName: "key.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+            }
+            Text(showsSetup ? "Connect" : "Cursor Usage")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.textPrimary)
             Spacer()
@@ -123,27 +137,21 @@ struct MenuContentView: View {
                 staleBanner(error)
             }
             heroSection(s)
-            if let msg = s.statusMessage {
-                statusBanner(msg)
-            }
-            sectionCard(title: "Plan & pool") {
-                planAndPoolSection(s)
-            }
-            if hasExtraDetails(s) {
-                sectionCard(title: "Details") {
-                    extraDetailsSection(s)
+            usageCostsTabbedSection(s)
+            if hasModelSplitDetails(s) {
+                sectionCard(
+                    title: "Model split",
+                    infoText: "Each category shows how much of your included plan it has used this cycle, and together they explain your total usage %."
+                ) {
+                    modelSplitSection(s)
                 }
             }
             compactFooter(updatedAt: s.fetchedAt)
         }
     }
 
-    private func hasExtraDetails(_ s: UsageSnapshot) -> Bool {
-        s.breakdownIncluded != nil
-            || s.breakdownBonus != nil
-            || s.apiPercentUsed != nil
-            || s.autoPercentUsed != nil
-            || s.onDemandEnabled
+    private func hasModelSplitDetails(_ s: UsageSnapshot) -> Bool {
+        s.apiPercentUsed != nil || s.autoPercentUsed != nil
     }
 
     private func staleBanner(_ message: String) -> some View {
@@ -158,9 +166,11 @@ struct MenuContentView: View {
     /// Top usage % — flat, no card background.
     private func heroSection(_ s: UsageSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Total included usage")
-                .font(.system(size: 10, weight: .semibold))
+            Text(planSummaryLine(s))
+                .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(Theme.textSecondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
 
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 if s.isUnlimited {
@@ -189,81 +199,231 @@ struct MenuContentView: View {
         }
     }
 
-    private func planAndPoolSection(_ s: UsageSnapshot) -> some View {
-        VStack(spacing: 0) {
-            row("Consumed", value: "\(s.used) / \(s.limit)")
-            rowDivider
-            row("Pool used", value: UsageSnapshot.formatPercent(s.includedPercent))
-            rowDivider
-            row("Remaining", value: "\(s.remaining)")
-            if s.remaining <= 0 && s.used >= s.limit {
-                Text("Pool full — see dashboard.")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Theme.textSecondary)
-                    .padding(.top, 4)
-            }
-            rowDivider
-            row("Plan", value: s.planName)
-            rowDivider
-            row("Billing", value: formatBilling(s.billingStart, s.billingEnd))
-            if let days = s.daysLeftInCycle {
-                rowDivider
-                row("Resets in", value: days == 0 ? "Today" : "\(days) d")
-            }
+    private func planSummaryLine(_ s: UsageSnapshot) -> String {
+        var parts = [s.planName]
+
+        if s.isUnlimited {
+            parts.append("Unlimited")
+        } else {
+            parts.append("\(s.used)/\(s.limit) used")
         }
+
+        if let days = s.daysLeftInCycle {
+            parts.append(days == 0 ? "Resets today" : "Resets in \(days) d")
+        }
+
+        return parts.joined(separator: " · ")
     }
 
-    private func extraDetailsSection(_ s: UsageSnapshot) -> some View {
-        VStack(spacing: 0) {
-            detailRows(s.breakdownIncluded, s.breakdownBonus, s.breakdownTotal)
-            if s.apiPercentUsed != nil || s.autoPercentUsed != nil {
-                if s.breakdownIncluded != nil || s.breakdownBonus != nil || s.breakdownTotal != nil {
-                    rowDivider
+    @ViewBuilder
+    private func usageCostsTabbedSection(_ s: UsageSnapshot) -> some View {
+        sectionCard(
+            title: "Usage costs",
+            infoText: usageCostsInfoText(s, period: usageCostPeriod)
+        ) {
+            VStack(spacing: 10) {
+                Picker("Period", selection: $usageCostPeriod) {
+                    ForEach(UsageCostPeriod.allCases) { period in
+                        Text(period.rawValue).tag(period)
+                    }
                 }
-                splitRows(s)
-            }
-            if s.onDemandEnabled {
-                rowDivider
-                row("On-demand", value: formatOnDemand(s.onDemandUsed))
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .controlSize(.regular)
+
+                Group {
+                    switch usageCostPeriod {
+                    case .today:
+                        todayCostsContent(s)
+                    case .cycle:
+                        cycleCostsContent(s)
+                    }
+                }
+                .animation(.easeInOut(duration: 0.15), value: usageCostPeriod)
             }
         }
     }
 
     @ViewBuilder
-    private func detailRows(_ included: Int?, _ bonus: Int?, _ total: Int?) -> some View {
-        if let v = included {
-            row("Included pool", value: "\(v)")
-            if bonus != nil || total != nil { rowDivider }
-        }
-        if let v = bonus {
-            row("Bonus", value: "\(v)")
-            if total != nil { rowDivider }
-        }
-        if let v = total {
-            row("Total pool", value: "\(v)")
+    private func todayCostsContent(_ s: UsageSnapshot) -> some View {
+        if s.todayCostsLoaded {
+            costMetricsContent(
+                billedCents: s.todayChargeableCents ?? 0,
+                includedCents: s.todayIncludedUsageValueCents ?? 0,
+                requestCount: s.todayEventCount,
+                billedInfo: "Extra usage charged to your account today.",
+                includedInfo: "Notional token cost of plan-covered requests today."
+            )
+        } else {
+            costsUnavailableRow(
+                title: "Today unavailable",
+                systemImage: "calendar.badge.exclamationmark",
+                retryInfo: "Tap ↻ in the header to retry loading today's usage."
+            )
         }
     }
 
-    private func splitRows(_ s: UsageSnapshot) -> some View {
-        Group {
+    @ViewBuilder
+    private func cycleCostsContent(_ s: UsageSnapshot) -> some View {
+        if s.cycleCostsLoaded {
+            costMetricsContent(
+                billedCents: s.chargeableCents ?? 0,
+                includedCents: s.includedUsageValueCents ?? 0,
+                requestCount: s.cycleCostEventCount,
+                billedInfo: "Extra usage charged to your account this cycle.",
+                includedInfo: "Notional token cost of plan-covered requests—not an extra charge."
+            )
+        } else {
+            costsUnavailableRow(
+                title: "Cycle totals unavailable",
+                systemImage: "chart.bar.xaxis",
+                retryInfo: "Usage % is still accurate. Tap ↻ in the header to retry."
+            )
+        }
+    }
+
+    private func costMetricsContent(
+        billedCents: Double,
+        includedCents: Double,
+        requestCount: Int?,
+        billedInfo: String,
+        includedInfo: String
+    ) -> some View {
+        VStack(spacing: 0) {
+            costRow(
+                label: "Billed (on-demand)",
+                info: billedInfo,
+                value: UsageSnapshot.formatDollarsFull(billedCents),
+                valueColor: billedCents >= 0.5
+                    ? Color(light: "#FF9500", dark: "#FF9F0A")
+                    : Theme.textPrimary
+            )
+            rowDivider
+            costRow(
+                label: "Included usage value",
+                info: includedInfo,
+                value: UsageSnapshot.formatDollarsFull(includedCents),
+                valueColor: Theme.textPrimary
+            )
+            if let count = requestCount {
+                rowDivider
+                row("Requests", value: "\(count)")
+            }
+        }
+    }
+
+    private func costsUnavailableRow(
+        title: String,
+        systemImage: String,
+        retryInfo: String
+    ) -> some View {
+        HStack(spacing: 6) {
+            Label(title, systemImage: systemImage)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Theme.textSecondary)
+            infoPopoverButton(retryInfo)
+        }
+    }
+
+    private func usageCostsInfoText(_ s: UsageSnapshot, period: UsageCostPeriod) -> String {
+        switch period {
+        case .today:
+            return
+                "Totals for today in your local timezone (midnight through now). "
+                + "Billed is on-demand spend; included usage value is notional token cost—not an extra charge."
+        case .cycle:
+            return cycleCostsInfoText(s)
+        }
+    }
+
+    private func cycleCostsInfoText(_ s: UsageSnapshot) -> String {
+        var parts: [String] = []
+        if s.cycleCostsLoaded {
+            let short = DateFormatter()
+            short.dateStyle = .medium
+            short.timeStyle = .none
+            if let start = UsageSnapshot.parseISO8601(s.billingStart) {
+                parts.append("Totals since \(short.string(from: start)) through today.")
+            } else {
+                parts.append("Totals for this billing period through today.")
+            }
+            parts.append(
+                "Billed is what you pay on-demand. Included usage value is the notional token cost of plan-covered requests—not an extra charge."
+            )
+        }
+        return parts.joined(separator: " ")
+    }
+
+    private func costRow(
+        label: String,
+        info: String,
+        value: String,
+        valueColor: Color
+    ) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            HStack(spacing: 4) {
+                Text(label)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.textPrimary)
+                infoPopoverButton(info)
+            }
+            Spacer(minLength: 8)
+            Text(value)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(valueColor)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+
+    private func modelSplitSection(_ s: UsageSnapshot) -> some View {
+        VStack(spacing: 0) {
             if let api = s.apiPercentUsed {
-                row("API models", value: "\(Int(api.rounded()))%")
+                modelSplitRow(
+                    label: "API models",
+                    info: "Models you pick yourself (e.g. Claude, GPT).",
+                    value: "\(Int(api.rounded()))%"
+                )
                 if s.autoPercentUsed != nil { rowDivider }
             }
             if let auto = s.autoPercentUsed {
-                row("Auto models", value: "\(Int(auto.rounded()))%")
+                modelSplitRow(
+                    label: "Auto models",
+                    info: "Cursor-routed models (e.g. Composer, Auto).",
+                    value: "\(Int(auto.rounded()))%"
+                )
             }
+        }
+    }
+
+    private func modelSplitRow(label: String, info: String, value: String) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            HStack(spacing: 4) {
+                Text(label)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.textPrimary)
+                infoPopoverButton(info)
+            }
+            Spacer(minLength: 8)
+            Text(value)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.textPrimary)
         }
     }
 
     private func sectionCard<Content: View>(
         title: String,
+        infoText: String? = nil,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(Theme.textPrimary)
+            HStack(alignment: .center, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Theme.textPrimary)
+                if let infoText {
+                    infoPopoverButton(infoText)
+                }
+            }
             VStack(alignment: .leading, spacing: 0) {
                 content()
             }
@@ -275,6 +435,10 @@ struct MenuContentView: View {
         }
     }
 
+    private func infoPopoverButton(_ text: String) -> some View {
+        InfoPopoverButton(text: text)
+    }
+
     private var sectionBorder: some View {
         RoundedRectangle(cornerRadius: 8, style: .continuous)
             .strokeBorder(Theme.sectionBorder, lineWidth: 0.5)
@@ -284,59 +448,142 @@ struct MenuContentView: View {
         Divider().opacity(0.3).padding(.vertical, 4)
     }
 
-    private func statusBanner(_ text: String) -> some View {
-        Label(text, systemImage: "info.circle.fill")
-            .font(.system(size: 10))
-            .foregroundStyle(Theme.textSecondary)
-            .padding(8)
-            .background(Theme.accent.opacity(0.1))
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-    }
+    private static let dashboardURL = URL(string: "https://cursor.com/dashboard/usage")!
 
     private func compactFooter(updatedAt: Date?) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(spacing: 0) {
             Divider().opacity(0.35)
-            HStack(spacing: 8) {
-                Image(systemName: "clock.arrow.circlepath")
+                .padding(.bottom, 10)
+
+            refreshSettingsRow
+                .padding(.bottom, updatedAt == nil ? 10 : 6)
+
+            if let updatedAt {
+                Text("Updated \(Self.updatedFormatter.string(from: updatedAt))")
                     .font(.system(size: 10))
                     .foregroundStyle(Theme.textSecondary)
-                Text("Refresh")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.textSecondary)
-                Spacer()
-                Picker("Auto-refresh", selection: $refreshInterval) {
-                    ForEach(RefreshInterval.allCases) { interval in
-                        Text(interval.label).tag(interval)
-                    }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .frame(width: 72)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, 10)
             }
-            HStack(alignment: .firstTextBaseline) {
-                if let updatedAt {
-                    Text("Updated \(Self.updatedFormatter.string(from: updatedAt))")
-                        .font(.system(size: 10))
-                        .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 8)
-                Button("Session", action: onEditSession)
-                    .buttonStyle(.plain)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.accent)
-                Link("Dashboard", destination: URL(string: "https://cursor.com/dashboard/usage")!)
-                    .font(.system(size: 11))
-            }
-            Button("Quit Cursor Usage") {
-                NSApp.terminate(nil)
-            }
-            .buttonStyle(.plain)
-            .font(.system(size: 11))
-            .foregroundStyle(Theme.textSecondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
+
+            footerActions
         }
         .padding(.top, 2)
+    }
+
+    private var refreshSettingsRow: some View {
+        HStack(spacing: 8) {
+            Label {
+                Text("Auto-refresh")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.textPrimary)
+            } icon: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .labelStyle(.titleAndIcon)
+            .foregroundStyle(Theme.textSecondary)
+
+            Spacer(minLength: 8)
+
+            Picker("Auto-refresh", selection: $refreshInterval) {
+                ForEach(RefreshInterval.allCases) { interval in
+                    Text("Every \(interval.label)").tag(interval)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .frame(minWidth: 96, alignment: .trailing)
+        }
+    }
+
+    private var footerActions: some View {
+        VStack(spacing: 0) {
+            Divider().opacity(0.25)
+
+            footerActionRow(title: "Session", systemImage: "person.badge.key", action: onEditSession)
+
+            Divider().opacity(0.15)
+                .padding(.leading, 36)
+
+            footerLinkRow(
+                title: "Open Dashboard",
+                systemImage: "safari",
+                destination: Self.dashboardURL
+            )
+
+            Divider().opacity(0.25)
+
+            footerActionRow(
+                title: "Quit Cursor Usage",
+                systemImage: "power",
+                action: { NSApp.terminate(nil) },
+                showsChevron: false,
+                titleColor: Theme.textSecondary
+            )
+        }
+        .padding(.horizontal, -14)
+    }
+
+    private func footerActionRow(
+        title: String,
+        systemImage: String,
+        action: @escaping () -> Void,
+        showsChevron: Bool = true,
+        titleColor: Color = Theme.textPrimary
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.textSecondary)
+                    .frame(width: 16, alignment: .center)
+
+                Text(title)
+                    .font(.system(size: 12))
+                    .foregroundStyle(titleColor)
+
+                Spacer(minLength: 8)
+
+                if showsChevron {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.textSecondary.opacity(0.55))
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func footerLinkRow(
+        title: String,
+        systemImage: String,
+        destination: URL
+    ) -> some View {
+        Link(destination: destination) {
+            HStack(spacing: 10) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.textSecondary)
+                    .frame(width: 16, alignment: .center)
+
+                Text(title)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.textPrimary)
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.textSecondary.opacity(0.55))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
     }
 
     private func row(_ label: String, value: String) -> some View {
@@ -351,23 +598,29 @@ struct MenuContentView: View {
                 .multilineTextAlignment(.trailing)
         }
     }
+}
 
-    private func formatOnDemand(_ value: Int?) -> String {
-        guard let value else { return "—" }
-        return "\(value)"
-    }
+private struct InfoPopoverButton: View {
+    let text: String
+    @State private var isShowing = false
 
-    private func formatBilling(_ start: String, _ end: String) -> String {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let short = DateFormatter()
-        short.dateStyle = .medium
-        short.timeStyle = .none
-
-        if let d1 = f.date(from: start) ?? ISO8601DateFormatter().date(from: start),
-           let d2 = f.date(from: end) ?? ISO8601DateFormatter().date(from: end) {
-            return "\(short.string(from: d1)) – \(short.string(from: d2))"
+    var body: some View {
+        Button {
+            isShowing.toggle()
+        } label: {
+            Image(systemName: "info.circle")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(Theme.textSecondary.opacity(0.85))
         }
-        return "\(start.prefix(10)) – \(end.prefix(10))"
+        .buttonStyle(.plain)
+        .help(text)
+        .popover(isPresented: $isShowing, arrowEdge: .top) {
+            Text(text)
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(10)
+                .frame(maxWidth: 240, alignment: .leading)
+        }
     }
 }

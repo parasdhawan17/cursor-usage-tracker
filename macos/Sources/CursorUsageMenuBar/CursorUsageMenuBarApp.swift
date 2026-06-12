@@ -46,7 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             splash?.setStatus("Connecting to Cursor…", detail: "Fetching your usage summary.")
             await viewModel.waitForInitialLoadIfNeeded()
-            splash?.setStatus("Ready", detail: "Find your usage % in the menu bar.")
+            splash?.setStatus("Ready", detail: "Find your cycle usage % in the menu bar.")
         }
 
         await Task.yield()
@@ -116,6 +116,14 @@ final class UsageViewModel: ObservableObject {
         if error != nil, snapshot == nil { return "!" }
         if let s = snapshot { return s.menuBarLabel }
         return "—"
+    }
+
+    var menuBarToolTip: String {
+        if menuBarShowsSetupIcon { return "Cursor Usage — Set up session token" }
+        if let s = snapshot { return s.menuBarToolTip }
+        if isLoading { return "Cursor Usage — Loading…" }
+        if error != nil { return "Cursor Usage — Could not load" }
+        return "Cursor Usage"
     }
 
     var showsSetupPanel: Bool {

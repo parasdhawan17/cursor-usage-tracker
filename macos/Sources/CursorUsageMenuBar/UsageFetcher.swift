@@ -24,6 +24,21 @@ struct UsageSnapshot: Equatable {
     let isUnlimited: Bool
     let statusMessage: String?
 
+    /// On-demand / usage-based spend this cycle (actual bill), from usage events.
+    let chargeableCents: Double?
+    /// Notional token value of included-plan usage this cycle (not billed separately).
+    let includedUsageValueCents: Double?
+    /// Whether cycle cost totals were loaded from the events API.
+    let cycleCostsLoaded: Bool
+    let cycleCostEventCount: Int?
+
+    /// On-demand spend today (local calendar day).
+    let todayChargeableCents: Double?
+    /// Notional token value of included-plan usage today.
+    let todayIncludedUsageValueCents: Double?
+    let todayCostsLoaded: Bool
+    let todayEventCount: Int?
+
     /// Dashboard “total usage” (totalPercentUsed) — matches Cursor’s main usage message.
     var primaryPercent: Double {
         if isUnlimited { return 0 }
@@ -36,10 +51,28 @@ struct UsageSnapshot: Equatable {
         return Self.formatPercent(primaryPercent)
     }
 
+    var menuBarToolTip: String {
+        if isUnlimited { return "Cursor Usage — Unlimited plan" }
+        var lines = ["Plan usage: \(Self.formatPercent(primaryPercent))"]
+        if let days = daysLeftInCycle {
+            lines.append("\(days) day\(days == 1 ? "" : "s") left in cycle")
+        }
+        return lines.joined(separator: "\n")
+    }
+
     static func formatPercent(_ p: Double) -> String {
         if p >= 100 { return "100%" }
         if p >= 10 { return "\(Int(p.rounded()))%" }
         return String(format: "%.1f%%", p)
+    }
+
+    /// Full-precision dollars for the panel and tooltips.
+    static func formatDollarsFull(_ cents: Double) -> String {
+        let dollars = cents / 100
+        if dollars >= 100 { return String(format: "$%.2f", dollars) }
+        if dollars >= 1 { return String(format: "$%.2f", dollars) }
+        if cents >= 0.005 { return String(format: "$%.2f", dollars) }
+        return "$0.00"
     }
 
     /// Expected usage % if 100% were spread evenly across the billing cycle (velocity target for today).
@@ -134,7 +167,134 @@ enum UsageFetcher {
             throw UsageFetcherError.invalidResponse
         }
 
-        return try parseSummary(json)
+        let snapshot = try parseSummary(json)
+        async let cycleCosts = fetchEventCosts(
+            token: token,
+            from: UsageSnapshot.parseISO8601(snapshot.billingStart),
+            to: min(Date(), UsageSnapshot.parseISO8601(snapshot.billingEnd) ?? Date())
+        )
+        async let todayCosts = fetchTodayCosts(token: token)
+        return mergeCosts(
+            into: snapshot,
+            cycle: try? await cycleCosts,
+            today: try? await todayCosts
+        )
+    }
+
+    private struct CostTotals {
+        let chargeableCents: Double
+        let includedUsageValueCents: Double
+        let eventCount: Int
+    }
+
+    private static func fetchTodayCosts(token: String) async throws -> CostTotals {
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: Date())
+        let end = Date()
+        return try await fetchEventCosts(token: token, from: start, to: end)
+    }
+
+    private static func fetchEventCosts(
+        token: String,
+        from start: Date?,
+        to end: Date?
+    ) async throws -> CostTotals {
+        guard let start, let end, end >= start else {
+            throw UsageFetcherError.invalidResponse
+        }
+
+        let startMs = String(Int(start.timeIntervalSince1970 * 1000))
+        let endMs = String(Int(end.timeIntervalSince1970 * 1000))
+
+        let pageSize = 100
+        var page = 1
+        var fetched = 0
+        var totalEvents = 0
+        var chargeableCents = 0.0
+        var includedValueCents = 0.0
+
+        repeat {
+            let payload: [String: Any] = [
+                "startDate": startMs,
+                "endDate": endMs,
+                "page": page,
+                "pageSize": pageSize,
+            ]
+            let events = try await postUsageEvents(token: token, json: payload)
+            if page == 1 {
+                totalEvents = events["totalUsageEventsCount"] as? Int ?? 0
+            }
+            let list = events["usageEventsDisplay"] as? [[String: Any]] ?? []
+            if list.isEmpty { break }
+
+            for event in list {
+                fetched += 1
+                let cents = doubleValue(event["chargedCents"]) ?? 0
+                if isBillableEvent(event) {
+                    chargeableCents += cents
+                } else if isIncludedUsageEvent(event) {
+                    includedValueCents += cents
+                }
+            }
+
+            if fetched >= totalEvents || list.count < pageSize { break }
+            page += 1
+            if page > 500 { break }
+        } while true
+
+        return CostTotals(
+            chargeableCents: chargeableCents,
+            includedUsageValueCents: includedValueCents,
+            eventCount: totalEvents
+        )
+    }
+
+    private static func postUsageEvents(token: String, json: [String: Any]) async throws -> [String: Any] {
+        var request = URLRequest(url: base.appendingPathComponent("api/dashboard/get-filtered-usage-events"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("https://cursor.com", forHTTPHeaderField: "Origin")
+        request.setValue("\(cookieName)=\(token)", forHTTPHeaderField: "Cookie")
+        request.httpBody = try JSONSerialization.data(withJSONObject: json)
+        request.timeoutInterval = 60
+
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw UsageFetcherError.network(error.localizedDescription)
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            throw UsageFetcherError.invalidResponse
+        }
+        if http.statusCode == 401 { throw UsageFetcherError.unauthorized }
+        guard http.statusCode == 200 else {
+            throw UsageFetcherError.network("HTTP \(http.statusCode)")
+        }
+
+        guard let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw UsageFetcherError.invalidResponse
+        }
+        return parsed
+    }
+
+    private static func isBillableEvent(_ event: [String: Any]) -> Bool {
+        let kind = event["kind"] as? String ?? ""
+        if kind == "USAGE_EVENT_KIND_USAGE_BASED" { return true }
+        if let costs = event["usageBasedCosts"] as? String {
+            let trimmed = costs.trimmingCharacters(in: .whitespaces)
+            return trimmed != "-" && trimmed != "$0.00" && !trimmed.isEmpty
+        }
+        return false
+    }
+
+    private static func isIncludedUsageEvent(_ event: [String: Any]) -> Bool {
+        let kind = event["kind"] as? String ?? ""
+        if kind.contains("ERRORED") { return false }
+        if isBillableEvent(event) { return false }
+        if kind.contains("INCLUDED") || kind.contains("FREE_CREDIT") { return true }
+        return event["isChargeable"] as? Bool != true
     }
 
     private static func parseSummary(_ json: [String: Any]) throws -> UsageSnapshot {
@@ -183,7 +343,51 @@ enum UsageFetcher {
             onDemandEnabled: onDemand?["enabled"] as? Bool ?? false,
             onDemandUsed: onDemand?["enabled"] as? Bool == true ? (onDemand?["used"] as? Int) : nil,
             isUnlimited: json["isUnlimited"] as? Bool ?? false,
-            statusMessage: statusMessage
+            statusMessage: statusMessage,
+            chargeableCents: nil,
+            includedUsageValueCents: nil,
+            cycleCostsLoaded: false,
+            cycleCostEventCount: nil,
+            todayChargeableCents: nil,
+            todayIncludedUsageValueCents: nil,
+            todayCostsLoaded: false,
+            todayEventCount: nil
+        )
+    }
+
+    private static func mergeCosts(
+        into snapshot: UsageSnapshot,
+        cycle: CostTotals?,
+        today: CostTotals?
+    ) -> UsageSnapshot {
+        UsageSnapshot(
+            includedPercent: snapshot.includedPercent,
+            used: snapshot.used,
+            limit: snapshot.limit,
+            remaining: snapshot.remaining,
+            planName: snapshot.planName,
+            billingStart: snapshot.billingStart,
+            billingEnd: snapshot.billingEnd,
+            daysLeftInCycle: snapshot.daysLeftInCycle,
+            fetchedAt: snapshot.fetchedAt,
+            breakdownIncluded: snapshot.breakdownIncluded,
+            breakdownBonus: snapshot.breakdownBonus,
+            breakdownTotal: snapshot.breakdownTotal,
+            apiPercentUsed: snapshot.apiPercentUsed,
+            autoPercentUsed: snapshot.autoPercentUsed,
+            dashboardTotalPercent: snapshot.dashboardTotalPercent,
+            onDemandEnabled: snapshot.onDemandEnabled,
+            onDemandUsed: snapshot.onDemandUsed,
+            isUnlimited: snapshot.isUnlimited,
+            statusMessage: snapshot.statusMessage,
+            chargeableCents: cycle?.chargeableCents,
+            includedUsageValueCents: cycle?.includedUsageValueCents,
+            cycleCostsLoaded: cycle != nil,
+            cycleCostEventCount: cycle?.eventCount,
+            todayChargeableCents: today?.chargeableCents,
+            todayIncludedUsageValueCents: today?.includedUsageValueCents,
+            todayCostsLoaded: today != nil,
+            todayEventCount: today?.eventCount
         )
     }
 
