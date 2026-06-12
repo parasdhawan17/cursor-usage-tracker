@@ -6,11 +6,11 @@ struct UsageProgressBar: View {
     let pacePercent: Double?
     var tint: Color
 
-    private let barHeight: CGFloat = 5
-    private let arrowRowHeight: CGFloat = 7
+    private let barHeight: CGFloat = 6
+    private let arrowRowHeight: CGFloat = 8
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: 2) {
             if pacePercent != nil {
                 paceArrowLayer
                     .frame(height: arrowRowHeight)
@@ -37,19 +37,28 @@ struct UsageProgressBar: View {
     private var progressBarLayer: some View {
         GeometryReader { geo in
             let width = geo.size.width
+            let fillWidth = width * CGFloat(min(max(progress, 0), 100) / 100)
+
             ZStack(alignment: .leading) {
                 Capsule()
                     .fill(Theme.progressTrack)
                     .frame(height: barHeight)
 
                 Capsule()
-                    .fill(tint)
-                    .frame(width: width * CGFloat(min(max(progress, 0), 100) / 100), height: barHeight)
+                    .fill(
+                        LinearGradient(
+                            colors: [tint.opacity(0.85), tint],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: fillWidth, height: barHeight)
+                    .animation(.spring(response: 0.45, dampingFraction: 0.82), value: progress)
 
                 if let pace = pacePercent {
-                    Rectangle()
-                        .fill(Theme.paceMarker.opacity(0.55))
-                        .frame(width: 1.5, height: barHeight + 2)
+                    Capsule()
+                        .fill(Theme.paceMarker.opacity(0.7))
+                        .frame(width: 2, height: barHeight + 4)
                         .position(x: markerX(pace: pace, width: width), y: barHeight / 2)
                 }
             }

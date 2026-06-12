@@ -18,14 +18,7 @@ struct MenuContentView: View {
     @Binding var refreshInterval: RefreshInterval
     let onRefresh: () -> Void
 
-    @State private var usageCostPeriod: UsageCostPeriod = .today
-
-    private enum UsageCostPeriod: String, CaseIterable, Identifiable {
-        case today = "Today"
-        case cycle = "This cycle"
-
-        var id: String { rawValue }
-    }
+    @State private var usageCostPeriod: UsageCostsPanel.Period = .today
 
     private static let updatedFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -37,48 +30,72 @@ struct MenuContentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            Divider().opacity(0.5)
             content
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 12)
         }
-        .frame(width: showsSetup ? 320 : 300)
+        .frame(width: showsSetup ? 320 : 320)
         .fixedSize(horizontal: false, vertical: true)
         .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(Theme.sectionBorder, lineWidth: 0.5)
         )
+        .shadow(color: .black.opacity(0.12), radius: 16, y: 8)
+        .shadow(color: .black.opacity(0.04), radius: 1, y: 0)
     }
 
     private var header: some View {
-        HStack(spacing: 6) {
-            if showsSetup {
-                Image(systemName: "key.fill")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.accent)
+        HStack(spacing: 10) {
+            headerIcon
+            VStack(alignment: .leading, spacing: 1) {
+                Text(showsSetup ? "Connect" : "Cursor Usage")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                if !showsSetup {
+                    Text("Plan & billing")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.textTertiary)
+                }
             }
-            Text(showsSetup ? "Connect" : "Cursor Usage")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Theme.textPrimary)
-            Spacer()
+            Spacer(minLength: 8)
             if !showsSetup, isLoading, snapshot != nil {
                 ProgressView().controlSize(.small)
             }
             if !showsSetup {
-            Button(action: onRefresh) {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 12, weight: .medium))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(Theme.textSecondary)
-            .disabled(isLoading && snapshot == nil)
-            .help("Refresh now")
+                Button(action: onRefresh) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .buttonStyle(ToolbarIconButtonStyle())
+                .disabled(isLoading && snapshot == nil)
+                .help("Refresh now")
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Theme.headerBackground)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Theme.separator)
+                .frame(height: 0.5)
+        }
+    }
+
+    @ViewBuilder
+    private var headerIcon: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(showsSetup ? Theme.accent.opacity(0.14) : Theme.accent.opacity(0.12))
+            Image(systemName: showsSetup ? "key.fill" : "gauge.with.dots.needle.67percent")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Theme.accent)
+                .symbolRenderingMode(.hierarchical)
+        }
+        .frame(width: 28, height: 28)
     }
 
     @ViewBuilder
@@ -105,34 +122,50 @@ struct MenuContentView: View {
     }
 
     private var loadingView: some View {
-        HStack(spacing: 8) {
-            ProgressView().controlSize(.small)
-            Text("Loading…")
+        VStack(spacing: 10) {
+            ProgressView().controlSize(.regular)
+            Text("Loading usage…")
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.textSecondary)
         }
-        .frame(maxWidth: .infinity, alignment: .center)
-        .padding(.vertical, 20)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
     }
 
     private func errorView(_ message: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Could not load usage", systemImage: "exclamationmark.triangle.fill")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Color(light: "#FF3B30", dark: "#FF453A"))
-            Text(message)
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Button("Retry", action: onRefresh)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(Theme.destructive.opacity(0.12))
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Theme.destructive)
+                }
+                .frame(width: 32, height: 32)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Could not load usage")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.textPrimary)
+                    Text(message)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Button("Try Again", action: onRefresh)
                 .buttonStyle(.borderedProminent)
-                .controlSize(.small)
+                .controlSize(.regular)
+                .frame(maxWidth: .infinity, alignment: .center)
+
             compactFooter(updatedAt: nil)
         }
     }
 
     private func usageView(_ s: UsageSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 14) {
             if isStale, let error {
                 staleBanner(error)
             }
@@ -143,7 +176,10 @@ struct MenuContentView: View {
                     title: "Model split",
                     infoText: "Each category shows how much of your included plan it has used this cycle, and together they explain your total usage %."
                 ) {
-                    modelSplitSection(s)
+                    ModelSplitPanel(
+                        apiPercent: s.apiPercentUsed,
+                        autoPercent: s.autoPercentUsed
+                    )
                 }
             }
             compactFooter(updatedAt: s.fetchedAt)
@@ -155,36 +191,40 @@ struct MenuContentView: View {
     }
 
     private func staleBanner(_ message: String) -> some View {
-        Label("Cached — \(message)", systemImage: "wifi.exclamationmark")
-            .font(.system(size: 10))
-            .foregroundStyle(Color(light: "#FF9500", dark: "#FF9F0A"))
-            .padding(8)
-            .background(Color(light: "#FF9500", dark: "#FF9F0A").opacity(0.1))
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        HStack(spacing: 8) {
+            Image(systemName: "wifi.exclamationmark")
+                .font(.system(size: 11, weight: .semibold))
+            Text("Showing cached data — \(message)")
+                .font(.system(size: 10, weight: .medium))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(Theme.warning)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.warningBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
-    /// Top usage % — flat, no card background.
     private func heroSection(_ s: UsageSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(planSummaryLine(s))
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(Theme.textSecondary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
+        let tint = s.isUnlimited ? Theme.accent : Theme.usageColor(percent: s.primaryPercent)
+
+        return VStack(alignment: .leading, spacing: 8) {
+            metadataChips(s)
 
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 if s.isUnlimited {
                     Text("∞")
-                        .font(.system(size: 34, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Theme.accent)
+                        .font(.system(size: 38, weight: .bold, design: .rounded))
+                        .foregroundStyle(tint)
                 } else {
                     Text(UsageSnapshot.formatPercent(s.primaryPercent))
-                        .font(.system(size: 34, weight: .semibold, design: .rounded))
-                        .foregroundStyle(Theme.usageColor(percent: s.primaryPercent))
+                        .font(.system(size: 38, weight: .bold, design: .rounded))
+                        .foregroundStyle(tint)
                 }
                 if !s.isUnlimited {
-                    Text("of plan")
-                        .font(.system(size: 13, weight: .medium))
+                    Text("used")
+                        .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(Theme.textSecondary)
                 }
             }
@@ -193,26 +233,41 @@ struct MenuContentView: View {
                 UsageProgressBar(
                     progress: s.primaryPercent,
                     pacePercent: s.evenPacePercent,
-                    tint: Theme.usageColor(percent: s.primaryPercent)
+                    tint: tint
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(.easeInOut(duration: 0.25), value: s.primaryPercent)
+    }
+
+    private func metadataChips(_ s: UsageSnapshot) -> some View {
+        FlowLayout(spacing: 6) {
+            metadataChip(s.planName, icon: "sparkles")
+            if s.isUnlimited {
+                metadataChip("Unlimited", icon: "infinity")
+            }
+            if let days = s.daysLeftInCycle {
+                metadataChip(
+                    days == 0 ? "Resets today" : "\(days) days left",
+                    icon: "calendar"
                 )
             }
         }
     }
 
-    private func planSummaryLine(_ s: UsageSnapshot) -> String {
-        var parts = [s.planName]
-
-        if s.isUnlimited {
-            parts.append("Unlimited")
-        } else {
-            parts.append("\(s.used)/\(s.limit) used")
+    private func metadataChip(_ text: String, icon: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .semibold))
+            Text(text)
+                .font(.system(size: 10, weight: .medium))
         }
-
-        if let days = s.daysLeftInCycle {
-            parts.append(days == 0 ? "Resets today" : "Resets in \(days) d")
-        }
-
-        return parts.joined(separator: " · ")
+        .foregroundStyle(Theme.textSecondary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Theme.chipBackground)
+        .clipShape(Capsule())
     }
 
     @ViewBuilder
@@ -221,111 +276,30 @@ struct MenuContentView: View {
             title: "Usage costs",
             infoText: usageCostsInfoText(s, period: usageCostPeriod)
         ) {
-            VStack(spacing: 10) {
-                Picker("Period", selection: $usageCostPeriod) {
-                    ForEach(UsageCostPeriod.allCases) { period in
-                        Text(period.rawValue).tag(period)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .controlSize(.regular)
-
-                Group {
-                    switch usageCostPeriod {
-                    case .today:
-                        todayCostsContent(s)
-                    case .cycle:
-                        cycleCostsContent(s)
-                    }
-                }
-                .animation(.easeInOut(duration: 0.15), value: usageCostPeriod)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func todayCostsContent(_ s: UsageSnapshot) -> some View {
-        if s.todayCostsLoaded {
-            costMetricsContent(
-                billedCents: s.todayChargeableCents ?? 0,
-                includedCents: s.todayIncludedUsageValueCents ?? 0,
-                requestCount: s.todayEventCount,
-                billedInfo: "Extra usage charged to your account today.",
-                includedInfo: "Notional token cost of plan-covered requests today."
-            )
-        } else {
-            costsUnavailableRow(
-                title: "Today unavailable",
-                systemImage: "calendar.badge.exclamationmark",
-                retryInfo: "Tap ↻ in the header to retry loading today's usage."
+            UsageCostsPanel(
+                period: $usageCostPeriod,
+                billedCents: usageCostPeriod == .today
+                    ? (s.todayChargeableCents ?? 0)
+                    : (s.chargeableCents ?? 0),
+                includedCents: usageCostPeriod == .today
+                    ? (s.todayIncludedUsageValueCents ?? 0)
+                    : (s.includedUsageValueCents ?? 0),
+                requestCount: usageCostPeriod == .today ? s.todayEventCount : s.cycleCostEventCount,
+                isLoaded: usageCostPeriod == .today ? s.todayCostsLoaded : s.cycleCostsLoaded,
+                unavailableTitle: usageCostPeriod == .today
+                    ? "Today unavailable"
+                    : "Cycle totals unavailable",
+                unavailableIcon: usageCostPeriod == .today
+                    ? "calendar.badge.exclamationmark"
+                    : "chart.bar.xaxis",
+                unavailableInfo: usageCostPeriod == .today
+                    ? "Tap ↻ in the header to retry loading today's usage."
+                    : "Usage % is still accurate. Tap ↻ in the header to retry."
             )
         }
     }
 
-    @ViewBuilder
-    private func cycleCostsContent(_ s: UsageSnapshot) -> some View {
-        if s.cycleCostsLoaded {
-            costMetricsContent(
-                billedCents: s.chargeableCents ?? 0,
-                includedCents: s.includedUsageValueCents ?? 0,
-                requestCount: s.cycleCostEventCount,
-                billedInfo: "Extra usage charged to your account this cycle.",
-                includedInfo: "Notional token cost of plan-covered requests—not an extra charge."
-            )
-        } else {
-            costsUnavailableRow(
-                title: "Cycle totals unavailable",
-                systemImage: "chart.bar.xaxis",
-                retryInfo: "Usage % is still accurate. Tap ↻ in the header to retry."
-            )
-        }
-    }
-
-    private func costMetricsContent(
-        billedCents: Double,
-        includedCents: Double,
-        requestCount: Int?,
-        billedInfo: String,
-        includedInfo: String
-    ) -> some View {
-        VStack(spacing: 0) {
-            costRow(
-                label: "Billed (on-demand)",
-                info: billedInfo,
-                value: UsageSnapshot.formatDollarsFull(billedCents),
-                valueColor: billedCents >= 0.5
-                    ? Color(light: "#FF9500", dark: "#FF9F0A")
-                    : Theme.textPrimary
-            )
-            rowDivider
-            costRow(
-                label: "Included usage value",
-                info: includedInfo,
-                value: UsageSnapshot.formatDollarsFull(includedCents),
-                valueColor: Theme.textPrimary
-            )
-            if let count = requestCount {
-                rowDivider
-                row("Requests", value: "\(count)")
-            }
-        }
-    }
-
-    private func costsUnavailableRow(
-        title: String,
-        systemImage: String,
-        retryInfo: String
-    ) -> some View {
-        HStack(spacing: 6) {
-            Label(title, systemImage: systemImage)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(Theme.textSecondary)
-            infoPopoverButton(retryInfo)
-        }
-    }
-
-    private func usageCostsInfoText(_ s: UsageSnapshot, period: UsageCostPeriod) -> String {
+    private func usageCostsInfoText(_ s: UsageSnapshot, period: UsageCostsPanel.Period) -> String {
         switch period {
         case .today:
             return
@@ -354,62 +328,6 @@ struct MenuContentView: View {
         return parts.joined(separator: " ")
     }
 
-    private func costRow(
-        label: String,
-        info: String,
-        value: String,
-        valueColor: Color
-    ) -> some View {
-        HStack(alignment: .center, spacing: 8) {
-            HStack(spacing: 4) {
-                Text(label)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.textPrimary)
-                infoPopoverButton(info)
-            }
-            Spacer(minLength: 8)
-            Text(value)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundStyle(valueColor)
-                .multilineTextAlignment(.trailing)
-        }
-    }
-
-    private func modelSplitSection(_ s: UsageSnapshot) -> some View {
-        VStack(spacing: 0) {
-            if let api = s.apiPercentUsed {
-                modelSplitRow(
-                    label: "API models",
-                    info: "Models you pick yourself (e.g. Claude, GPT).",
-                    value: "\(Int(api.rounded()))%"
-                )
-                if s.autoPercentUsed != nil { rowDivider }
-            }
-            if let auto = s.autoPercentUsed {
-                modelSplitRow(
-                    label: "Auto models",
-                    info: "Cursor-routed models (e.g. Composer, Auto).",
-                    value: "\(Int(auto.rounded()))%"
-                )
-            }
-        }
-    }
-
-    private func modelSplitRow(label: String, info: String, value: String) -> some View {
-        HStack(alignment: .center, spacing: 8) {
-            HStack(spacing: 4) {
-                Text(label)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.textPrimary)
-                infoPopoverButton(info)
-            }
-            Spacer(minLength: 8)
-            Text(value)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.textPrimary)
-        }
-    }
-
     private func sectionCard<Content: View>(
         title: String,
         infoText: String? = nil,
@@ -417,21 +335,16 @@ struct MenuContentView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .center, spacing: 4) {
-                Text(title)
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Theme.textPrimary)
+                SectionHeaderLabel(title: title)
                 if let infoText {
                     infoPopoverButton(infoText)
                 }
             }
-            VStack(alignment: .leading, spacing: 0) {
+
+            InsetGroupedCard {
                 content()
+                    .padding(.vertical, 6)
             }
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.sectionBackground)
-            .overlay(sectionBorder)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
     }
 
@@ -439,31 +352,17 @@ struct MenuContentView: View {
         InfoPopoverButton(text: text)
     }
 
-    private var sectionBorder: some View {
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .strokeBorder(Theme.sectionBorder, lineWidth: 0.5)
-    }
-
-    private var rowDivider: some View {
-        Divider().opacity(0.3).padding(.vertical, 4)
-    }
-
     private static let dashboardURL = URL(string: "https://cursor.com/dashboard/usage")!
 
     private func compactFooter(updatedAt: Date?) -> some View {
-        VStack(spacing: 0) {
-            Divider().opacity(0.35)
-                .padding(.bottom, 10)
-
+        VStack(spacing: 10) {
             refreshSettingsRow
-                .padding(.bottom, updatedAt == nil ? 10 : 6)
 
             if let updatedAt {
                 Text("Updated \(Self.updatedFormatter.string(from: updatedAt))")
                     .font(.system(size: 10))
-                    .foregroundStyle(Theme.textSecondary)
+                    .foregroundStyle(Theme.textTertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.bottom, 10)
             }
 
             footerActions
@@ -475,11 +374,11 @@ struct MenuContentView: View {
         HStack(spacing: 8) {
             Label {
                 Text("Auto-refresh")
-                    .font(.system(size: 11))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Theme.textPrimary)
             } icon: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 11, weight: .medium))
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 10, weight: .semibold))
             }
             .labelStyle(.titleAndIcon)
             .foregroundStyle(Theme.textSecondary)
@@ -495,34 +394,39 @@ struct MenuContentView: View {
             .labelsHidden()
             .frame(minWidth: 96, alignment: .trailing)
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Theme.chipBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var footerActions: some View {
-        VStack(spacing: 0) {
-            Divider().opacity(0.25)
-
-            footerActionRow(title: "Session", systemImage: "person.badge.key", action: onEditSession)
-
-            Divider().opacity(0.15)
-                .padding(.leading, 36)
-
-            footerLinkRow(
-                title: "Open Dashboard",
-                systemImage: "safari",
-                destination: Self.dashboardURL
-            )
-
-            Divider().opacity(0.25)
-
-            footerActionRow(
-                title: "Quit Cursor Usage",
-                systemImage: "power",
-                action: { NSApp.terminate(nil) },
-                showsChevron: false,
-                titleColor: Theme.textSecondary
-            )
+        InsetGroupedCard {
+            VStack(spacing: 0) {
+                footerActionRow(title: "Session", systemImage: "person.badge.key", action: onEditSession)
+                footerDivider
+                footerLinkRow(
+                    title: "Open Dashboard",
+                    systemImage: "safari",
+                    destination: Self.dashboardURL
+                )
+                footerDivider
+                footerActionRow(
+                    title: "Quit Cursor Usage",
+                    systemImage: "power",
+                    action: { NSApp.terminate(nil) },
+                    showsChevron: false,
+                    titleColor: Theme.textSecondary
+                )
+            }
         }
-        .padding(.horizontal, -14)
+    }
+
+    private var footerDivider: some View {
+        Rectangle()
+            .fill(Theme.separator)
+            .frame(height: 0.5)
+            .padding(.leading, 34)
     }
 
     private func footerActionRow(
@@ -547,15 +451,15 @@ struct MenuContentView: View {
 
                 if showsChevron {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.textSecondary.opacity(0.55))
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Theme.textTertiary)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 7)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(HoverRowButtonStyle())
     }
 
     private func footerLinkRow(
@@ -577,50 +481,58 @@ struct MenuContentView: View {
                 Spacer(minLength: 8)
 
                 Image(systemName: "arrow.up.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.textSecondary.opacity(0.55))
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Theme.textTertiary)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 7)
             .contentShape(Rectangle())
         }
-    }
-
-    private func row(_ label: String, value: String) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(label)
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.textSecondary)
-            Spacer(minLength: 8)
-            Text(value)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.textPrimary)
-                .multilineTextAlignment(.trailing)
-        }
+        .buttonStyle(HoverRowButtonStyle())
     }
 }
 
-private struct InfoPopoverButton: View {
-    let text: String
-    @State private var isShowing = false
+// MARK: - Flow layout for metadata chips
 
-    var body: some View {
-        Button {
-            isShowing.toggle()
-        } label: {
-            Image(systemName: "info.circle")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Theme.textSecondary.opacity(0.85))
+private struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let result = arrange(proposal: proposal, subviews: subviews)
+        return result.size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = arrange(proposal: proposal, subviews: subviews)
+        for (index, position) in result.positions.enumerated() {
+            subviews[index].place(
+                at: CGPoint(x: bounds.minX + position.x, y: bounds.minY + position.y),
+                proposal: .unspecified
+            )
         }
-        .buttonStyle(.plain)
-        .help(text)
-        .popover(isPresented: $isShowing, arrowEdge: .top) {
-            Text(text)
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.textPrimary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(10)
-                .frame(maxWidth: 240, alignment: .leading)
+    }
+
+    private func arrange(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, positions: [CGPoint]) {
+        let maxWidth = proposal.width ?? .infinity
+        var positions: [CGPoint] = []
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var maxX: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > maxWidth, x > 0 {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            positions.append(CGPoint(x: x, y: y))
+            rowHeight = max(rowHeight, size.height)
+            x += size.width + spacing
+            maxX = max(maxX, x - spacing)
         }
+
+        return (CGSize(width: maxX, height: y + rowHeight), positions)
     }
 }

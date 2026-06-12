@@ -13,16 +13,26 @@ struct SetupContentView: View {
     private static let dashboardURL = URL(string: "https://cursor.com/dashboard/usage")!
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 16) {
             hero
             stepsCard
             pasteSection
 
             if let saveError {
-                Label(saveError, systemImage: "exclamationmark.circle.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Color(light: "#FF3B30", dark: "#FF453A"))
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.destructive)
+                    Text(saveError)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.destructive)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.destructive.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
 
             saveActions
@@ -41,15 +51,15 @@ struct SetupContentView: View {
         HStack(alignment: .top, spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Theme.accent.opacity(0.14))
+                    .fill(Theme.accent.opacity(0.12))
                 Image(systemName: "key.fill")
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(Theme.accent)
                     .symbolRenderingMode(.hierarchical)
             }
-            .frame(width: 42, height: 42)
+            .frame(width: 44, height: 44)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text("Connect your account")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)
@@ -62,53 +72,48 @@ struct SetupContentView: View {
     }
 
     private var stepsCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("How to get your token")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(Theme.textPrimary)
-                .padding(.bottom, 10)
+        VStack(alignment: .leading, spacing: 6) {
+            SectionHeaderLabel(title: "How to get your token")
 
-            VStack(alignment: .leading, spacing: 12) {
-                setupStep(
-                    number: 1,
-                    title: "Open the usage dashboard",
-                    detail: "Sign in at cursor.com if you are not already."
-                ) {
-                    Button {
-                        NSWorkspace.shared.open(Self.dashboardURL)
-                    } label: {
-                        Label("Open Dashboard", systemImage: "safari")
+            InsetGroupedCard {
+                VStack(alignment: .leading, spacing: 14) {
+                    setupStep(
+                        number: 1,
+                        title: "Open the usage dashboard",
+                        detail: "Sign in at cursor.com if you are not already."
+                    ) {
+                        Button {
+                            NSWorkspace.shared.open(Self.dashboardURL)
+                        } label: {
+                            Label("Open Dashboard", systemImage: "safari")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+
+                    setupStep(
+                        number: 2,
+                        title: "Open developer tools",
+                        detail: "Press ⌥⌘I in Chrome, or right-click the page and choose Inspect."
+                    )
+
+                    setupStep(
+                        number: 3,
+                        title: "Open the Cookies panel",
+                        detail: "In the top bar, choose Application → Storage → Cookies → cursor.com."
+                    )
+
+                    setupStep(
+                        number: 4,
+                        title: "Copy the session token",
+                        detail: nil
+                    ) {
+                        tokenNameHint
+                    }
                 }
-
-                setupStep(
-                    number: 2,
-                    title: "Open developer tools",
-                    detail: "Press ⌥⌘I in Chrome, or right-click the page and choose Inspect."
-                )
-
-                setupStep(
-                    number: 3,
-                    title: "Open the Cookies panel",
-                    detail: "In the top bar, choose Application → Storage → Cookies → cursor.com."
-                )
-
-                setupStep(
-                    number: 4,
-                    title: "Copy the session token",
-                    detail: nil
-                ) {
-                    tokenNameHint
-                }
+                .padding(.vertical, 6)
             }
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.sectionBackground)
-        .overlay(sectionBorder)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var tokenNameHint: some View {
@@ -131,36 +136,38 @@ struct SetupContentView: View {
     }
 
     private var pasteSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            setupStepHeader(number: 5, title: "Paste your token here")
+        VStack(alignment: .leading, spacing: 6) {
+            SectionHeaderLabel(title: "Paste your token")
 
-            TokenInputField(text: $tokenInput, focusToken: tokenFieldFocusToken)
-                .frame(height: 26)
+            VStack(alignment: .leading, spacing: 10) {
+                TokenInputField(text: $tokenInput, focusToken: tokenFieldFocusToken)
+                    .frame(height: 28)
 
-            HStack(spacing: 8) {
-                Button {
-                    if let pasted = PasteboardToken.readString() {
-                        tokenInput = pasted
+                HStack(spacing: 8) {
+                    Button {
+                        if let pasted = PasteboardToken.readString() {
+                            tokenInput = pasted
+                        }
+                    } label: {
+                        Label("Paste from clipboard", systemImage: "doc.on.clipboard")
                     }
-                } label: {
-                    Label("Paste from clipboard", systemImage: "doc.on.clipboard")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
 
-                Text("or ⌘V")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Theme.textSecondary)
+                    Text("or ⌘V")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.textTertiary)
+                }
             }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.accent.opacity(0.06))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Theme.accent.opacity(0.2), lineWidth: 0.5)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.accent.opacity(0.06))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Theme.accent.opacity(0.22), lineWidth: 0.5)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var saveActions: some View {
@@ -189,22 +196,9 @@ struct SetupContentView: View {
     private var privacyNote: some View {
         Label("Stored locally on this Mac only", systemImage: "lock.fill")
             .font(.system(size: 10))
-            .foregroundStyle(Theme.textSecondary)
+            .foregroundStyle(Theme.textTertiary)
     }
 
-    private var sectionBorder: some View {
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .strokeBorder(Theme.sectionBorder, lineWidth: 0.5)
-    }
-
-    private func setupStepHeader(number: Int, title: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            stepBadge(number)
-            Text(title)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.textPrimary)
-        }
-    }
 
     private func setupStep<Accessory: View>(
         number: Int,
@@ -235,7 +229,7 @@ struct SetupContentView: View {
 
     private func stepBadge(_ number: Int) -> some View {
         Text("\(number)")
-            .font(.system(size: 11, weight: .bold, design: .rounded))
+            .font(.system(size: 10, weight: .bold, design: .rounded))
             .foregroundStyle(.white)
             .frame(width: 20, height: 20)
             .background(Theme.accent, in: Circle())

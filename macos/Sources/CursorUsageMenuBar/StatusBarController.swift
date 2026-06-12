@@ -11,7 +11,7 @@ private final class KeyablePanel: NSPanel {
 /// Owns the NSStatusItem — menu bar shows "C 32%" text.
 @MainActor
 final class StatusBarController: NSObject {
-    private static let panelWidth: CGFloat = 300
+    private static let panelWidth: CGFloat = 320
     private static let setupPanelWidth: CGFloat = 320
 
     private let viewModel: UsageViewModel
