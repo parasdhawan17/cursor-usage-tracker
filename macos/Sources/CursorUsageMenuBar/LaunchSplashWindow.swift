@@ -120,6 +120,6 @@ private struct LaunchSplashView: View {
         .padding(.horizontal, 28)
         .padding(.vertical, 22)
         .frame(width: 400, height: 248)
-        .background(.regularMaterial)
+        .glassPanelBackground()
     }
 }

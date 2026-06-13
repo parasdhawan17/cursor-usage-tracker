@@ -10,8 +10,14 @@ struct TokenInputField: NSViewRepresentable {
         let field = NSTextField(string: text)
         field.isEditable = true
         field.isSelectable = true
-        field.isBordered = true
-        field.bezelStyle = .roundedBezel
+        field.isBordered = false
+        field.isBezeled = false
+        field.drawsBackground = true
+        if #available(macOS 14.0, *) {
+            field.backgroundColor = NSColor.quaternarySystemFill
+        } else {
+            field.backgroundColor = NSColor.controlBackgroundColor
+        }
         field.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
         field.placeholderString = "Paste token here"
         field.delegate = context.coordinator

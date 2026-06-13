@@ -37,14 +37,7 @@ struct MenuContentView: View {
         }
         .frame(width: showsSetup ? 320 : 320)
         .fixedSize(horizontal: false, vertical: true)
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Theme.sectionBorder, lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.12), radius: 16, y: 8)
-        .shadow(color: .black.opacity(0.04), radius: 1, y: 0)
+        .glassPanelBackground()
     }
 
     private var header: some View {
@@ -77,12 +70,6 @@ struct MenuContentView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Theme.headerBackground)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Theme.separator)
-                .frame(height: 0.5)
-        }
     }
 
     @ViewBuilder
@@ -401,7 +388,7 @@ struct MenuContentView: View {
     }
 
     private var footerActions: some View {
-        InsetGroupedCard {
+        InsetGroupedCard(roundsBottom: false) {
             VStack(spacing: 0) {
                 footerActionRow(title: "Session", systemImage: "person.badge.key", action: onEditSession)
                 footerDivider

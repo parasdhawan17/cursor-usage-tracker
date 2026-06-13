@@ -161,11 +161,7 @@ struct SetupContentView: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.accent.opacity(0.06))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .strokeBorder(Theme.accent.opacity(0.2), lineWidth: 0.5)
-            )
+            .background(Theme.chipBackground)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
     }

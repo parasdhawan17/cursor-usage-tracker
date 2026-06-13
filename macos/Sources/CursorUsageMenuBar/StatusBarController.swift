@@ -21,6 +21,7 @@ final class StatusBarController: NSObject {
     private var cancellables = Set<AnyCancellable>()
     private var themeObserver: NSObjectProtocol?
     private var outsideClickMonitor: Any?
+    private var isPanelOpen = false
     /// Avoids repeated makeKey/resignKey calls that can freeze SwiftUI hosting on every keystroke.
     private var panelAcceptsKeyboard = false
 
@@ -43,7 +44,7 @@ final class StatusBarController: NSObject {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
+        panel.hasShadow = false
         // Keep the panel open while the user types in setup; usage-only mode still dismisses on outside click.
         panel.hidesOnDeactivate = false
         panel.contentViewController = hosting
@@ -59,7 +60,7 @@ final class StatusBarController: NSObject {
         guard viewModel.needsSetup else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
             guard let self, let button = self.statusItem.button else { return }
-            if !self.panel.isVisible {
+            if !self.isPanelOpen {
                 self.showPanel(anchoredTo: button)
             }
         }
@@ -166,7 +167,7 @@ final class StatusBarController: NSObject {
     }
 
     private func togglePanel(on button: NSStatusBarButton) {
-        if panel.isVisible {
+        if isPanelOpen {
             hidePanel()
             return
         }
@@ -189,18 +190,20 @@ final class StatusBarController: NSObject {
             viewModel.requestTokenFieldFocus()
         }
         installOutsideClickMonitor()
+        isPanelOpen = true
     }
 
     private func hidePanel() {
         panel.resignKey()
         panel.orderOut(nil)
         panelAcceptsKeyboard = false
+        isPanelOpen = false
         removeOutsideClickMonitor()
     }
 
     /// `.nonactivatingPanel` blocks SecureField/TextField input; enable key window only for setup.
     private func syncPanelKeyboardFocus() {
-        guard panel.isVisible else { return }
+        guard isPanelOpen else { return }
         let wantsKeyboard = viewModel.showsSetupPanel
         guard wantsKeyboard != panelAcceptsKeyboard else { return }
         panelAcceptsKeyboard = wantsKeyboard
@@ -220,7 +223,7 @@ final class StatusBarController: NSObject {
     }
 
     private func resizePanelIfVisible() {
-        guard panel.isVisible, let button = statusItem.button else { return }
+        guard isPanelOpen, let button = statusItem.button else { return }
         let frame = panelFrame(anchoredTo: button)
         hosting.view.frame = NSRect(origin: .zero, size: frame.size)
         panel.setFrame(frame, display: true)
@@ -267,15 +270,25 @@ final class StatusBarController: NSObject {
         return NSRect(x: visible.maxX - 60, y: visible.maxY - 4, width: 48, height: 1)
     }
 
+    private func statusBarButtonScreenFrame() -> NSRect? {
+        guard let button = statusItem.button else { return nil }
+        let screen = button.window?.screen ?? NSScreen.main ?? NSScreen.screens.first
+        guard let screen else { return nil }
+        return screenFrame(of: button, on: screen)
+    }
+
     private func installOutsideClickMonitor() {
         removeOutsideClickMonitor()
         outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) {
             [weak self] _ in
-            guard let self, self.panel.isVisible else { return }
+            guard let self, self.isPanelOpen else { return }
             let click = NSEvent.mouseLocation
-            if !self.panel.frame.contains(click) {
-                self.hidePanel()
+            if self.panel.frame.contains(click) { return }
+            // Status bar click is handled by togglePanel on mouse up; ignore it here.
+            if let buttonFrame = self.statusBarButtonScreenFrame(), buttonFrame.contains(click) {
+                return
             }
+            self.hidePanel()
         }
     }
 

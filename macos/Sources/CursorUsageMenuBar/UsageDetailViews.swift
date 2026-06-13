@@ -218,14 +218,10 @@ private struct CostMetricTile: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 7)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
+        .background {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(tint.opacity(0.08))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(tint.opacity(0.16), lineWidth: 0.5)
-        )
+        }
     }
 }
 
@@ -335,10 +331,10 @@ private struct ModelSplitRow: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .background(
+        .background {
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(segment.color.opacity(0.05))
-        )
+                .fill(segment.color.opacity(0.06))
+        }
     }
 }
 
