@@ -34,18 +34,18 @@ NOTES="$(cat <<EOF
 
 Liquid Glass UI refresh and panel interaction fixes.
 
-### What's new
+### What is new
 - Liquid Glass panel styling on macOS 26+ with material fallback on earlier releases
 - System-native semantic colors replace hardcoded hex tokens
 - Cleaner section cards, token field, and toolbar button styling
 - Fix status bar icon toggle when dismissing the panel via outside click
-- Track panel open state reliably instead of relying on \`isVisible\`
+- Track panel open state reliably instead of relying on isVisible
 
 ### Install
 1. Download **Cursor-Usage-${VERSION}-universal.dmg** below
 2. Open the DMG and drag **Cursor Usage** to **Applications**
 3. First launch: right-click the app → **Open** (if Gatekeeper blocks it)
-4. Click the gear icon in the menu bar and paste your \`WorkosCursorSessionToken\`
+4. Click the gear icon in the menu bar and paste your WorkosCursorSessionToken
 
 See the [README](https://github.com/parasdhawan17/cursor-usage-tracker#quick-start-menu-bar-app) for full setup instructions.
 EOF
