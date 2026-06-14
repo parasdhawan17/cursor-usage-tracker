@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${1:-1.0.8}"
+VERSION="${1:-1.0.9}"
 TAG="v${VERSION}"
 DMG="$ROOT/dist/Cursor-Usage-${VERSION}-universal.dmg"
 
@@ -32,14 +32,13 @@ fi
 NOTES="$(cat <<EOF
 ## Cursor Usage ${VERSION}
 
-Replace the custom menu bar panel with a native NSPopover for more reliable interactions.
+In-app updates: the menu bar app now checks GitHub for new releases and installs them with one click.
 
 ### What is new
-- Use NSPopover instead of a custom borderless NSPanel for usage and setup UI
-- Fix keyboard focus and token field input in the setup flow
-- Dismiss on outside click with both global and local event monitors
-- Activate the popover window immediately so it no longer looks dimmed until clicked
-- Fix status bar toggle timing by handling left clicks on mouse down
+- Check GitHub Releases every 6 hours for a newer version
+- Show a compact update banner in the usage panel when an update is available
+- Download the universal DMG and replace the app in Applications automatically
+- Add \`AppVersion\` helpers for semver comparison against release tags
 
 ### Install
 1. Download **Cursor-Usage-${VERSION}-universal.dmg** below
