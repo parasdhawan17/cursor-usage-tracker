@@ -18,6 +18,10 @@ struct MenuContentView: View {
     @Binding var refreshInterval: RefreshInterval
     let onRefresh: () -> Void
 
+    let updatePhase: UpdateViewModel.Phase
+    let onInstallUpdate: () -> Void
+    let onDismissUpdateError: () -> Void
+
     @State private var usageCostPeriod: UsageCostsPanel.Period = .today
 
     private static let updatedFormatter: DateFormatter = {
@@ -343,6 +347,9 @@ struct MenuContentView: View {
 
     private func compactFooter(updatedAt: Date?) -> some View {
         VStack(spacing: 10) {
+            if !showsSetup {
+                updateBanner
+            }
             refreshSettingsRow
 
             if let updatedAt {
@@ -355,6 +362,83 @@ struct MenuContentView: View {
             footerActions
         }
         .padding(.top, 2)
+    }
+
+    @ViewBuilder
+    private var updateBanner: some View {
+        switch updatePhase {
+        case .available(let update):
+            updateBannerRow(background: Theme.accent.opacity(0.12)) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+                Text("Update available — v\(update.version)")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.accent)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Button("Update", action: onInstallUpdate)
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+            }
+
+        case .downloading:
+            updateBannerRow {
+                ProgressView().controlSize(.mini)
+                Text("Downloading update…")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+
+        case .installing:
+            updateBannerRow {
+                ProgressView().controlSize(.mini)
+                Text("Installing update…")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+
+        case .failed(let message):
+            updateBannerRow(background: Theme.destructive.opacity(0.08)) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.destructive)
+                Text(message)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 4)
+                Button("Dismiss", action: onDismissUpdateError)
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.destructive)
+            }
+
+        case .idle, .checking:
+            EmptyView()
+        }
+    }
+
+    private func updateBannerRow<Content: View>(
+        background: Color = Theme.chipBackground,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        HStack(spacing: 6) {
+            content()
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(background)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var refreshSettingsRow: some View {

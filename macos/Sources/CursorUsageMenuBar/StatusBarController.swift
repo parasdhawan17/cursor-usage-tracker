@@ -92,6 +92,11 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.resizePopoverIfVisible() }
             .store(in: &cancellables)
+
+        viewModel.updateViewModel.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.resizePopoverIfVisible() }
+            .store(in: &cancellables)
     }
 
     private func observeAppearance() {
@@ -153,7 +158,10 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             hidePopover()
             return
         }
-        Task { await viewModel.refreshOnMenuOpen() }
+        Task {
+            await viewModel.refreshOnMenuOpen()
+            await viewModel.updateViewModel.checkForUpdates()
+        }
         showPopover(relativeTo: button)
     }
 
@@ -314,7 +322,10 @@ private struct MenuPanelHost: View {
             isLoading: viewModel.isLoading,
             isStale: viewModel.isShowingStaleData,
             refreshInterval: $viewModel.refreshInterval,
-            onRefresh: { Task { await viewModel.refresh() } }
+            onRefresh: { Task { await viewModel.refresh() } },
+            updatePhase: viewModel.updateViewModel.phase,
+            onInstallUpdate: { Task { await viewModel.updateViewModel.installUpdate() } },
+            onDismissUpdateError: { viewModel.updateViewModel.dismissFailure() }
         )
     }
 }

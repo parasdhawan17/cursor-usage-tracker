@@ -29,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         splash?.setStatus("Preparing menu bar…", detail: "This app runs from the menu bar, not the Dock.")
         await Task.yield()
         let viewModel = UsageViewModel()
+        Task { await viewModel.updateViewModel.checkForUpdates() }
 
         splash?.setStatus("Starting menu bar icon…")
         await Task.yield()
@@ -97,6 +98,8 @@ final class UsageViewModel: ObservableObject {
             startAutoRefresh()
         }
     }
+
+    let updateViewModel = UpdateViewModel()
 
     private var refreshTask: Task<Void, Never>?
     private var fetchTask: Task<Void, Never>?
