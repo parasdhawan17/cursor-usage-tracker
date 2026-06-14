@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${1:-1.0.7}"
+VERSION="${1:-1.0.8}"
 TAG="v${VERSION}"
 DMG="$ROOT/dist/Cursor-Usage-${VERSION}-universal.dmg"
 
@@ -32,14 +32,14 @@ fi
 NOTES="$(cat <<EOF
 ## Cursor Usage ${VERSION}
 
-Liquid Glass UI refresh and panel interaction fixes.
+Replace the custom menu bar panel with a native NSPopover for more reliable interactions.
 
 ### What is new
-- Liquid Glass panel styling on macOS 26+ with material fallback on earlier releases
-- System-native semantic colors replace hardcoded hex tokens
-- Cleaner section cards, token field, and toolbar button styling
-- Fix status bar icon toggle when dismissing the panel via outside click
-- Track panel open state reliably instead of relying on isVisible
+- Use NSPopover instead of a custom borderless NSPanel for usage and setup UI
+- Fix keyboard focus and token field input in the setup flow
+- Dismiss on outside click with both global and local event monitors
+- Activate the popover window immediately so it no longer looks dimmed until clicked
+- Fix status bar toggle timing by handling left clicks on mouse down
 
 ### Install
 1. Download **Cursor-Usage-${VERSION}-universal.dmg** below

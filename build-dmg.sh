@@ -9,9 +9,9 @@ ARM_BIN="$MACOS/.build/arm64/release/CursorUsageMenuBar"
 X64_BIN="$MACOS/.build/x86_64/release/CursorUsageMenuBar"
 UNIVERSAL_BIN="$MACOS/.build/universal/CursorUsageMenuBar"
 DIST="$ROOT/dist"
-DMG_NAME="Cursor-Usage-1.0.7-universal.dmg"
+DMG_NAME="Cursor-Usage-1.0.8-universal.dmg"
 DMG_PATH="$DIST/$DMG_NAME"
-VERSION="1.0.7"
+VERSION="1.0.8"
 
 echo "Building arm64..."
 swift build -c release --package-path "$MACOS" --build-path "$MACOS/.build/arm64" --triple arm64-apple-macosx13.0

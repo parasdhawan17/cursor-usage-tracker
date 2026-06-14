@@ -2,52 +2,34 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// Borderless panel that can take keyboard focus when setup needs text input.
-private final class KeyablePanel: NSPanel {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
-}
-
 /// Owns the NSStatusItem — menu bar shows "C 32%" text.
 @MainActor
-final class StatusBarController: NSObject {
+final class StatusBarController: NSObject, NSPopoverDelegate {
     private static let panelWidth: CGFloat = 320
-    private static let setupPanelWidth: CGFloat = 320
 
     private let viewModel: UsageViewModel
     private let statusItem: NSStatusItem
-    private let panel: KeyablePanel
+    private let popover: NSPopover
     private let hosting: NSHostingController<MenuPanelHost>
     private var cancellables = Set<AnyCancellable>()
     private var themeObserver: NSObjectProtocol?
     private var outsideClickMonitor: Any?
-    private var isPanelOpen = false
-    /// Avoids repeated makeKey/resignKey calls that can freeze SwiftUI hosting on every keystroke.
-    private var panelAcceptsKeyboard = false
+    private var localClickMonitor: Any?
 
     init(viewModel: UsageViewModel) {
         self.viewModel = viewModel
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.hosting = NSHostingController(rootView: MenuPanelHost(viewModel: viewModel))
-        self.panel = KeyablePanel(
-            contentRect: NSRect(x: 0, y: 0, width: Self.panelWidth, height: 400),
-            styleMask: [.borderless, .fullSizeContentView],
-            backing: .buffered,
-            defer: true
-        )
+        self.popover = NSPopover()
         super.init()
     }
 
     func install() {
-        panel.isFloatingPanel = true
-        panel.level = .popUpMenu
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        // Keep the panel open while the user types in setup; usage-only mode still dismisses on outside click.
-        panel.hidesOnDeactivate = false
-        panel.contentViewController = hosting
+        popover.contentViewController = hosting
+        popover.animates = true
+        popover.delegate = self
+        popover.contentSize = NSSize(width: Self.panelWidth, height: 400)
+        syncPopoverBehavior()
 
         configureStatusButton()
         bindViewModel()
@@ -55,13 +37,13 @@ final class StatusBarController: NSObject {
         updateButton()
     }
 
-    /// Opens the setup panel on first launch so users see something after install (menu bar only).
+    /// Opens the setup popover on first launch so users see something after install (menu bar only).
     func presentSetupPanelIfNeeded() {
         guard viewModel.needsSetup else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
             guard let self, let button = self.statusItem.button else { return }
-            if !self.isPanelOpen {
-                self.showPanel(anchoredTo: button)
+            if !self.popover.isShown {
+                self.showPopover(relativeTo: button)
             }
         }
     }
@@ -76,7 +58,7 @@ final class StatusBarController: NSObject {
         }
         button.target = self
         button.action = #selector(statusItemClicked(_:))
-        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        button.sendAction(on: [.leftMouseDown, .rightMouseUp])
         updateButton()
     }
 
@@ -87,12 +69,12 @@ final class StatusBarController: NSObject {
             .store(in: &cancellables)
 
         // Do not tie these to objectWillChange — sessionTokenInput updates every keystroke and
-        // remeasuring the panel + makeKeyAndOrderFront there freezes the UI on some Macs.
+        // remeasuring the popover there freezes the UI on some Macs.
         Publishers.CombineLatest(viewModel.$needsSetup, viewModel.$isEditingSession)
             .receive(on: RunLoop.main)
             .sink { [weak self] _, _ in
-                self?.syncPanelKeyboardFocus()
-                self?.resizePanelIfVisible()
+                self?.syncPopoverBehavior()
+                self?.resizePopoverIfVisible()
             }
             .store(in: &cancellables)
 
@@ -103,12 +85,12 @@ final class StatusBarController: NSObject {
             viewModel.$isSavingSession
         )
         .receive(on: RunLoop.main)
-        .sink { [weak self] _, _, _, _ in self?.resizePanelIfVisible() }
+        .sink { [weak self] _, _, _, _ in self?.resizePopoverIfVisible() }
         .store(in: &cancellables)
 
         viewModel.$sessionSaveError
             .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.resizePanelIfVisible() }
+            .sink { [weak self] _ in self?.resizePopoverIfVisible() }
             .store(in: &cancellables)
     }
 
@@ -153,7 +135,7 @@ final class StatusBarController: NSObject {
             showStatusItemMenu(on: sender)
             return
         }
-        togglePanel(on: sender)
+        togglePopover(on: sender)
     }
 
     private func showStatusItemMenu(on button: NSStatusBarButton) {
@@ -166,67 +148,52 @@ final class StatusBarController: NSObject {
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 4), in: button)
     }
 
-    private func togglePanel(on button: NSStatusBarButton) {
-        if isPanelOpen {
-            hidePanel()
+    private func togglePopover(on button: NSStatusBarButton) {
+        if popover.isShown {
+            hidePopover()
             return
         }
         Task { await viewModel.refreshOnMenuOpen() }
-        showPanel(anchoredTo: button)
+        showPopover(relativeTo: button)
     }
 
-    private func showPanel(anchoredTo button: NSStatusBarButton) {
-        let frame = panelFrame(anchoredTo: button)
-        hosting.view.frame = NSRect(origin: .zero, size: frame.size)
-        panel.setFrame(frame, display: true)
+    private func showPopover(relativeTo button: NSStatusBarButton) {
+        syncPopoverBehavior()
+        updatePopoverContentSize()
         NSApp.activate(ignoringOtherApps: true)
-        if viewModel.showsSetupPanel {
-            panel.makeKeyAndOrderFront(nil)
-        } else {
-            panel.orderFrontRegardless()
-        }
-        syncPanelKeyboardFocus()
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        configurePopoverChrome()
+        activatePopoverWindow()
+    }
+
+    private func hidePopover() {
+        popover.performClose(nil)
+    }
+
+    /// Setup keeps the popover open for typing; usage uses semitransient so it can become key immediately.
+    private func syncPopoverBehavior() {
+        popover.behavior = viewModel.showsSetupPanel ? .applicationDefined : .semitransient
+    }
+
+    /// Transient popovers stay inactive and look dimmed until clicked; activate on open like system extras.
+    private func activatePopoverWindow() {
+        guard let window = popover.contentViewController?.view.window else { return }
+        window.makeKey()
         if viewModel.showsSetupPanel {
             viewModel.requestTokenFieldFocus()
         }
-        installOutsideClickMonitor()
-        isPanelOpen = true
     }
 
-    private func hidePanel() {
-        panel.resignKey()
-        panel.orderOut(nil)
-        panelAcceptsKeyboard = false
-        isPanelOpen = false
-        removeOutsideClickMonitor()
+    private func resizePopoverIfVisible() {
+        guard popover.isShown else { return }
+        syncPopoverBehavior()
+        updatePopoverContentSize()
+        configurePopoverChrome()
     }
 
-    /// `.nonactivatingPanel` blocks SecureField/TextField input; enable key window only for setup.
-    private func syncPanelKeyboardFocus() {
-        guard isPanelOpen else { return }
-        let wantsKeyboard = viewModel.showsSetupPanel
-        guard wantsKeyboard != panelAcceptsKeyboard else { return }
-        panelAcceptsKeyboard = wantsKeyboard
-
-        if wantsKeyboard {
-            if panel.styleMask.contains(.nonactivatingPanel) {
-                panel.styleMask.remove(.nonactivatingPanel)
-            }
-            NSApp.activate(ignoringOtherApps: true)
-            panel.makeKeyAndOrderFront(nil)
-        } else {
-            panel.resignKey()
-            if !panel.styleMask.contains(.nonactivatingPanel) {
-                panel.styleMask.insert(.nonactivatingPanel)
-            }
-        }
-    }
-
-    private func resizePanelIfVisible() {
-        guard isPanelOpen, let button = statusItem.button else { return }
-        let frame = panelFrame(anchoredTo: button)
-        hosting.view.frame = NSRect(origin: .zero, size: frame.size)
-        panel.setFrame(frame, display: true)
+    private func updatePopoverContentSize() {
+        let height = measuredContentHeight(width: Self.panelWidth)
+        popover.contentSize = NSSize(width: Self.panelWidth, height: height)
     }
 
     private func measuredContentHeight(width: CGFloat) -> CGFloat {
@@ -235,39 +202,74 @@ final class StatusBarController: NSObject {
         return max(120, ceil(size.height))
     }
 
-    /// Places the panel just below the status item; height follows SwiftUI content.
-    private func panelFrame(anchoredTo button: NSStatusBarButton) -> NSRect {
-        let screen = button.window?.screen ?? NSScreen.main ?? NSScreen.screens[0]
-        let visible = screen.visibleFrame
-        let anchor = screenFrame(of: button, on: screen)
+    /// Lets the SwiftUI glass background provide the panel chrome instead of the default popover fill.
+    private func configurePopoverChrome() {
+        guard let contentView = popover.contentViewController?.view,
+              let window = contentView.window else { return }
 
-        let width = viewModel.showsSetupPanel ? Self.setupPanelWidth : Self.panelWidth
-        let gap: CGFloat = 8
-        let height = measuredContentHeight(width: width)
+        window.isOpaque = false
+        window.backgroundColor = .clear
 
-        var x = anchor.midX - width / 2
-        var y = anchor.minY - height - gap
-
-        x = max(visible.minX + 10, min(x, visible.maxX - width - 10))
-        // Keep the panel on screen; prefer hanging below the menu bar.
-        if y + height > visible.maxY - 8 {
-            y = visible.maxY - height - 8
+        if let frameView = window.contentView?.superview {
+            frameView.wantsLayer = true
+            frameView.layer?.backgroundColor = NSColor.clear.cgColor
         }
-        if y < visible.minY + 8 {
-            y = visible.minY + 8
-        }
-
-        return NSRect(x: x, y: y, width: width, height: height)
+        contentView.wantsLayer = true
+        contentView.layer?.backgroundColor = NSColor.clear.cgColor
     }
 
-    private func screenFrame(of button: NSStatusBarButton, on screen: NSScreen) -> NSRect {
-        if let window = button.window {
-            let inWindow = button.convert(button.bounds, to: nil)
-            return window.convertToScreen(inWindow)
+    // MARK: - NSPopoverDelegate
+
+    func popoverWillShow(_ notification: Notification) {
+        activatePopoverWindow()
+    }
+
+    func popoverDidShow(_ notification: Notification) {
+        configurePopoverChrome()
+        statusItem.button?.highlight(true)
+        installOutsideClickMonitor()
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        statusItem.button?.highlight(false)
+        removeOutsideClickMonitor()
+    }
+
+    private func installOutsideClickMonitor() {
+        removeOutsideClickMonitor()
+
+        let handleOutsideClick = { [weak self] in
+            guard let self, self.popover.isShown else { return }
+            let click = NSEvent.mouseLocation
+            if let popoverFrame = self.popover.contentViewController?.view.window?.frame,
+               popoverFrame.contains(click) {
+                return
+            }
+            // Status bar click is handled by togglePopover on mouse down; ignore it here.
+            if let buttonFrame = self.statusBarButtonScreenFrame(), buttonFrame.contains(click) {
+                return
+            }
+            self.hidePopover()
         }
-        // Fallback when the status button has no window (rare): anchor below menu bar on that screen.
-        let visible = screen.visibleFrame
-        return NSRect(x: visible.maxX - 60, y: visible.maxY - 4, width: 48, height: 1)
+
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { _ in
+            handleOutsideClick()
+        }
+        localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { event in
+            handleOutsideClick()
+            return event
+        }
+    }
+
+    private func removeOutsideClickMonitor() {
+        if let outsideClickMonitor {
+            NSEvent.removeMonitor(outsideClickMonitor)
+            self.outsideClickMonitor = nil
+        }
+        if let localClickMonitor {
+            NSEvent.removeMonitor(localClickMonitor)
+            self.localClickMonitor = nil
+        }
     }
 
     private func statusBarButtonScreenFrame() -> NSRect? {
@@ -277,26 +279,13 @@ final class StatusBarController: NSObject {
         return screenFrame(of: button, on: screen)
     }
 
-    private func installOutsideClickMonitor() {
-        removeOutsideClickMonitor()
-        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) {
-            [weak self] _ in
-            guard let self, self.isPanelOpen else { return }
-            let click = NSEvent.mouseLocation
-            if self.panel.frame.contains(click) { return }
-            // Status bar click is handled by togglePanel on mouse up; ignore it here.
-            if let buttonFrame = self.statusBarButtonScreenFrame(), buttonFrame.contains(click) {
-                return
-            }
-            self.hidePanel()
+    private func screenFrame(of button: NSStatusBarButton, on screen: NSScreen) -> NSRect {
+        if let window = button.window {
+            let inWindow = button.convert(button.bounds, to: nil)
+            return window.convertToScreen(inWindow)
         }
-    }
-
-    private func removeOutsideClickMonitor() {
-        if let outsideClickMonitor {
-            NSEvent.removeMonitor(outsideClickMonitor)
-            self.outsideClickMonitor = nil
-        }
+        let visible = screen.visibleFrame
+        return NSRect(x: visible.maxX - 60, y: visible.maxY - 4, width: 48, height: 1)
     }
 
     @objc private func quitApp() {
