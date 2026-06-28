@@ -91,6 +91,10 @@ final class UsageViewModel: ObservableObject {
     @Published private(set) var tokenFieldFocusToken = 0
     @Published private(set) var sessionSaveError: String?
     @Published private(set) var isSavingSession = false
+    @Published private(set) var launchAtLoginEnabled = LaunchAtLoginSettings.isEnabled
+    @Published private(set) var launchAtLoginError: String?
+    @Published private(set) var caffeinateEnabled = CaffeinateSettings.isEnabled
+    @Published private(set) var caffeinateError: String?
     @Published var refreshInterval: RefreshInterval = .stored {
         didSet {
             guard refreshInterval != oldValue else { return }
@@ -135,6 +139,7 @@ final class UsageViewModel: ObservableObject {
 
     init() {
         needsSetup = !SessionTokenStore.hasToken
+        restoreCaffeinateIfNeeded()
         if !needsSetup {
             Task { await refresh() }
         }
@@ -188,6 +193,36 @@ final class UsageViewModel: ObservableObject {
         sessionTokenInput = ""
         snapshot = nil
         error = nil
+    }
+
+    func setLaunchAtLoginEnabled(_ enabled: Bool) {
+        do {
+            try LaunchAtLoginSettings.setEnabled(enabled)
+            launchAtLoginError = nil
+        } catch {
+            launchAtLoginError = error.localizedDescription
+        }
+        launchAtLoginEnabled = LaunchAtLoginSettings.isEnabled
+    }
+
+    func setCaffeinateEnabled(_ enabled: Bool) {
+        do {
+            try CaffeinateSettings.setEnabled(enabled)
+            caffeinateError = nil
+        } catch {
+            caffeinateError = error.localizedDescription
+        }
+        caffeinateEnabled = CaffeinateSettings.isEnabled
+    }
+
+    private func restoreCaffeinateIfNeeded() {
+        do {
+            try CaffeinateSettings.restoreStoredPreference()
+            caffeinateError = nil
+        } catch {
+            caffeinateError = error.localizedDescription
+        }
+        caffeinateEnabled = CaffeinateSettings.isEnabled
     }
 
     func startAutoRefresh() {

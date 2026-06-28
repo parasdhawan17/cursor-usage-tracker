@@ -15,6 +15,12 @@ struct MenuContentView: View {
     let error: String?
     let isLoading: Bool
     let isStale: Bool
+    @Binding var launchAtLoginEnabled: Bool
+    let launchAtLoginError: String?
+    let onSetLaunchAtLoginEnabled: (Bool) -> Void
+    @Binding var caffeinateEnabled: Bool
+    let caffeinateError: String?
+    let onSetCaffeinateEnabled: (Bool) -> Void
     @Binding var refreshInterval: RefreshInterval
     let onRefresh: () -> Void
 
@@ -350,7 +356,7 @@ struct MenuContentView: View {
             if !showsSetup {
                 updateBanner
             }
-            refreshSettingsRow
+            settingsRows
 
             if let updatedAt {
                 Text("Updated \(Self.updatedFormatter.string(from: updatedAt))")
@@ -441,18 +447,63 @@ struct MenuContentView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
+    private var settingsRows: some View {
+        VStack(spacing: 0) {
+            launchAtLoginSettingsRow
+            settingsDivider
+            caffeinateSettingsRow
+            settingsDivider
+            refreshSettingsRow
+        }
+        .background(Theme.chipBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var launchAtLoginSettingsRow: some View {
+        compactSettingsRow(error: launchAtLoginError) {
+            settingLabel("Start at Login", systemImage: "power")
+                .help("Launch Cursor Usage at login")
+
+            Spacer(minLength: 8)
+
+            Toggle(
+                "Launch at Login",
+                isOn: Binding(
+                    get: { launchAtLoginEnabled },
+                    set: { onSetLaunchAtLoginEnabled($0) }
+                )
+            )
+            .toggleStyle(.switch)
+            .labelsHidden()
+            .controlSize(.small)
+        }
+    }
+
+    private var caffeinateSettingsRow: some View {
+        compactSettingsRow(error: caffeinateError) {
+            settingLabel("Awake", systemImage: "cup.and.saucer.fill")
+                .help("Prevent idle sleep while Cursor Usage is running")
+
+            Spacer(minLength: 8)
+
+            Toggle(
+                "Caffeinate",
+                isOn: Binding(
+                    get: { caffeinateEnabled },
+                    set: { onSetCaffeinateEnabled($0) }
+                )
+            )
+            .toggleStyle(.switch)
+            .labelsHidden()
+            .controlSize(.small)
+            .help("Prevent idle sleep while Cursor Usage is running")
+        }
+    }
+
     private var refreshSettingsRow: some View {
-        HStack(spacing: 8) {
-            Label {
-                Text("Auto-refresh")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.textPrimary)
-            } icon: {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.system(size: 10, weight: .semibold))
-            }
-            .labelStyle(.titleAndIcon)
-            .foregroundStyle(Theme.textSecondary)
+        compactSettingsRow {
+            settingLabel("Refresh", systemImage: "arrow.triangle.2.circlepath")
+                .help("Auto-refresh interval")
 
             Spacer(minLength: 8)
 
@@ -465,10 +516,46 @@ struct MenuContentView: View {
             .labelsHidden()
             .frame(minWidth: 96, alignment: .trailing)
         }
+    }
+
+    private var settingsDivider: some View {
+        Rectangle()
+            .fill(Theme.separator)
+            .frame(height: 0.5)
+            .padding(.leading, 34)
+    }
+
+    private func compactSettingsRow<Content: View>(
+        error: String? = nil,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                content()
+            }
+
+            if let error {
+                Text(error)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.destructive)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
         .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(Theme.chipBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(.vertical, 6)
+    }
+
+    private func settingLabel(_ title: String, systemImage: String) -> some View {
+        Label {
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Theme.textPrimary)
+        } icon: {
+            Image(systemName: systemImage)
+                .font(.system(size: 10, weight: .semibold))
+        }
+        .labelStyle(.titleAndIcon)
+        .foregroundStyle(Theme.textSecondary)
     }
 
     private var footerActions: some View {

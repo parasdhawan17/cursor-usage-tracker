@@ -93,6 +93,16 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             .sink { [weak self] _ in self?.resizePopoverIfVisible() }
             .store(in: &cancellables)
 
+        viewModel.$launchAtLoginError
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.resizePopoverIfVisible() }
+            .store(in: &cancellables)
+
+        viewModel.$caffeinateError
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.resizePopoverIfVisible() }
+            .store(in: &cancellables)
+
         viewModel.updateViewModel.objectWillChange
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.resizePopoverIfVisible() }
@@ -321,6 +331,18 @@ private struct MenuPanelHost: View {
             error: viewModel.error,
             isLoading: viewModel.isLoading,
             isStale: viewModel.isShowingStaleData,
+            launchAtLoginEnabled: Binding(
+                get: { viewModel.launchAtLoginEnabled },
+                set: { viewModel.setLaunchAtLoginEnabled($0) }
+            ),
+            launchAtLoginError: viewModel.launchAtLoginError,
+            onSetLaunchAtLoginEnabled: { viewModel.setLaunchAtLoginEnabled($0) },
+            caffeinateEnabled: Binding(
+                get: { viewModel.caffeinateEnabled },
+                set: { viewModel.setCaffeinateEnabled($0) }
+            ),
+            caffeinateError: viewModel.caffeinateError,
+            onSetCaffeinateEnabled: { viewModel.setCaffeinateEnabled($0) },
             refreshInterval: $viewModel.refreshInterval,
             onRefresh: { Task { await viewModel.refresh() } },
             updatePhase: viewModel.updateViewModel.phase,

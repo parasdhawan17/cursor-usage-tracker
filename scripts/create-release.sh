@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${1:-1.0.9}"
+VERSION="${1:-1.0.10}"
 TAG="v${VERSION}"
 DMG="$ROOT/dist/Cursor-Usage-${VERSION}-universal.dmg"
 
