@@ -32,13 +32,12 @@ fi
 NOTES="$(cat <<EOF
 ## Cursor Usage ${VERSION}
 
-In-app updates: the menu bar app now checks GitHub for new releases and installs them with one click.
+Adds compact power and startup controls to the menu bar panel.
 
 ### What is new
-- Check GitHub Releases every 6 hours for a newer version
-- Show a compact update banner in the usage panel when an update is available
-- Download the universal DMG and replace the app in Applications automatically
-- Add \`AppVersion\` helpers for semver comparison against release tags
+- Start Cursor Usage automatically at macOS login
+- Keep the Mac awake while Cursor Usage is running
+- Combine Start at Login, Awake, and Refresh into one compact settings card
 
 ### Install
 1. Download **Cursor-Usage-${VERSION}-universal.dmg** below
