@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${1:-1.0.10}"
+VERSION="${1:-1.0.11}"
 TAG="v${VERSION}"
 DMG="$ROOT/dist/Cursor-Usage-${VERSION}-universal.dmg"
 
@@ -32,12 +32,12 @@ fi
 NOTES="$(cat <<EOF
 ## Cursor Usage ${VERSION}
 
-Adds compact power and startup controls to the menu bar panel.
+Improves the in-app updater panel and release install flow.
 
 ### What is new
-- Start Cursor Usage automatically at macOS login
-- Keep the Mac awake while Cursor Usage is running
-- Combine Start at Login, Awake, and Refresh into one compact settings card
+- Show update availability at the top of the menu bar panel
+- Display download progress while fetching the latest DMG
+- Show the installed app version and last refresh time in clearer locations
 
 ### Install
 1. Download **Cursor-Usage-${VERSION}-universal.dmg** below

@@ -60,24 +60,25 @@ enum UpdateService {
         )
     }
 
-    static func downloadDMG(from url: URL, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
+    static func downloadDMG(from url: URL, progress: @escaping @Sendable (Double?) -> Void) async throws -> URL {
         var request = URLRequest(url: url)
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
 
-        let (tempURL, response) = try await URLSession.shared.download(for: request)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-            throw UpdateError.downloadFailed
-        }
-
-        progress(1)
-
         let destination = FileManager.default.temporaryDirectory
             .appendingPathComponent("Cursor-Usage-Update-\(UUID().uuidString).dmg")
-        if FileManager.default.fileExists(atPath: destination.path) {
-            try FileManager.default.removeItem(at: destination)
+
+        let delegate = DMGDownloadDelegate(destination: destination, progress: progress)
+        let session = URLSession(configuration: .ephemeral, delegate: delegate, delegateQueue: nil)
+        delegate.session = session
+
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                delegate.start(continuation: continuation)
+                session.downloadTask(with: request).resume()
+            }
+        } onCancel: {
+            session.invalidateAndCancel()
         }
-        try FileManager.default.moveItem(at: tempURL, to: destination)
-        return destination
     }
 
     static func installAndRelaunch(dmgURL: URL) throws {
@@ -149,6 +150,85 @@ enum UpdateService {
     }
 }
 
+private final class DMGDownloadDelegate: NSObject, URLSessionDownloadDelegate {
+    private let destination: URL
+    private let progress: @Sendable (Double?) -> Void
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<URL, Error>?
+
+    var session: URLSession?
+
+    init(destination: URL, progress: @escaping @Sendable (Double?) -> Void) {
+        self.destination = destination
+        self.progress = progress
+    }
+
+    func start(continuation: CheckedContinuation<URL, Error>) {
+        lock.lock()
+        self.continuation = continuation
+        lock.unlock()
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didWriteData bytesWritten: Int64,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) {
+        guard totalBytesExpectedToWrite > 0 else {
+            progress(nil)
+            return
+        }
+        progress(min(1, Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)))
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didFinishDownloadingTo location: URL
+    ) {
+        guard let http = downloadTask.response as? HTTPURLResponse,
+              (200...299).contains(http.statusCode)
+        else {
+            finish(.failure(UpdateError.downloadFailed))
+            return
+        }
+
+        do {
+            if FileManager.default.fileExists(atPath: destination.path) {
+                try FileManager.default.removeItem(at: destination)
+            }
+            try FileManager.default.moveItem(at: location, to: destination)
+            progress(1)
+            finish(.success(destination))
+        } catch {
+            finish(.failure(error))
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
+        if let error {
+            finish(.failure(error))
+        }
+    }
+
+    private func finish(_ result: Result<URL, Error>) {
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+
+        guard let continuation else { return }
+        session?.finishTasksAndInvalidate()
+        continuation.resume(with: result)
+    }
+}
+
 enum UpdateError: LocalizedError {
     case invalidResponse
     case httpStatus(Int)
@@ -200,7 +280,7 @@ final class UpdateViewModel: ObservableObject {
         case idle
         case checking
         case available(AppUpdateInfo)
-        case downloading
+        case downloading(Double?)
         case installing
         case failed(String)
     }
@@ -237,9 +317,16 @@ final class UpdateViewModel: ObservableObject {
     func installUpdate() async {
         guard case .available(let update) = phase else { return }
 
-        phase = .downloading
+        phase = .downloading(0)
         do {
-            let dmgURL = try await UpdateService.downloadDMG(from: update.dmgDownloadURL) { _ in }
+            let dmgURL = try await UpdateService.downloadDMG(from: update.dmgDownloadURL) { [weak self] progress in
+                Task { @MainActor in
+                    guard let self else { return }
+                    if case .downloading = self.phase {
+                        self.phase = .downloading(progress)
+                    }
+                }
+            }
             phase = .installing
             try UpdateService.installAndRelaunch(dmgURL: dmgURL)
         } catch {

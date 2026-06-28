@@ -40,14 +40,34 @@ struct MenuContentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
+            topUpdateBanner
             content
                 .padding(.horizontal, 16)
                 .padding(.top, 14)
                 .padding(.bottom, 12)
+            appVersionFooter
         }
         .frame(width: showsSetup ? 320 : 320)
         .fixedSize(horizontal: false, vertical: true)
         .glassPanelBackground()
+    }
+
+    @ViewBuilder
+    private var topUpdateBanner: some View {
+        if !showsSetup {
+            updateBanner
+                .padding(.horizontal, 16)
+                .padding(.bottom, updatePhase == .idle || updatePhase == .checking ? 0 : 2)
+        }
+    }
+
+    private var appVersionFooter: some View {
+        Text("Version \(AppVersion.current)")
+            .font(.system(size: 10))
+            .foregroundStyle(Theme.textTertiary)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 10)
     }
 
     private var header: some View {
@@ -353,18 +373,7 @@ struct MenuContentView: View {
 
     private func compactFooter(updatedAt: Date?) -> some View {
         VStack(spacing: 10) {
-            if !showsSetup {
-                updateBanner
-            }
-            settingsRows
-
-            if let updatedAt {
-                Text("Updated \(Self.updatedFormatter.string(from: updatedAt))")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Theme.textTertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
+            settingsRows(updatedAt: updatedAt)
             footerActions
         }
         .padding(.top, 2)
@@ -390,14 +399,29 @@ struct MenuContentView: View {
                     .foregroundStyle(Theme.accent)
             }
 
-        case .downloading:
+        case .downloading(let progress):
             updateBannerRow {
-                ProgressView().controlSize(.mini)
-                Text("Downloading update…")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.textSecondary)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.accent)
+                        Text("Downloading update…")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Theme.textSecondary)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    if let progress {
+                        ProgressView(value: progress)
+                            .progressViewStyle(.linear)
+                            .controlSize(.small)
+                    } else {
+                        ProgressView()
+                            .progressViewStyle(.linear)
+                            .controlSize(.small)
+                    }
+                }
             }
 
         case .installing:
@@ -447,13 +471,13 @@ struct MenuContentView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
-    private var settingsRows: some View {
+    private func settingsRows(updatedAt: Date?) -> some View {
         VStack(spacing: 0) {
             launchAtLoginSettingsRow
             settingsDivider
             caffeinateSettingsRow
             settingsDivider
-            refreshSettingsRow
+            refreshSettingsRow(updatedAt: updatedAt)
         }
         .background(Theme.chipBackground)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -500,8 +524,8 @@ struct MenuContentView: View {
         }
     }
 
-    private var refreshSettingsRow: some View {
-        compactSettingsRow {
+    private func refreshSettingsRow(updatedAt: Date?) -> some View {
+        compactSettingsRow(footnote: lastRefreshText(updatedAt)) {
             settingLabel("Refresh", systemImage: "arrow.triangle.2.circlepath")
                 .help("Auto-refresh interval")
 
@@ -518,6 +542,11 @@ struct MenuContentView: View {
         }
     }
 
+    private func lastRefreshText(_ updatedAt: Date?) -> String? {
+        guard let updatedAt else { return nil }
+        return "Last refreshed \(Self.updatedFormatter.string(from: updatedAt))"
+    }
+
     private var settingsDivider: some View {
         Rectangle()
             .fill(Theme.separator)
@@ -527,11 +556,19 @@ struct MenuContentView: View {
 
     private func compactSettingsRow<Content: View>(
         error: String? = nil,
+        footnote: String? = nil,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 content()
+            }
+
+            if let footnote {
+                Text(footnote)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if let error {

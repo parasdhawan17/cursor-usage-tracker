@@ -33,6 +33,7 @@ Native SwiftUI utility for **macOS 13+** (Apple Silicon and Intel). Runs as a me
 | **Model split** | Breakdown of API models vs Auto models as a share of plan usage |
 | **Auto-refresh** | Background updates every 1–5 minutes (configurable in the panel) |
 | **Offline-friendly** | Shows cached data with a warning if a refresh fails |
+| **In-app updates** | Checks GitHub Releases and offers the latest DMG from the menu bar panel |
 | **Secure token storage** | Session token saved locally in Application Support (mode `600`); no `.env` required |
 
 ### Python CLI
@@ -87,6 +88,7 @@ Click the menu bar label to open the panel:
 - **Model split** — how much of your plan API vs Auto models have consumed
 - **Refresh** — tap ↻ in the header, or open the panel (auto-refreshes if data is older than 30 seconds)
 - **Session** — update or remove your saved token
+- **Update banner** — when a newer GitHub release exists, install it from the panel
 
 ### Auto-refresh
 
