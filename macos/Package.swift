@@ -12,5 +12,10 @@ let package = Package(
             name: "CursorUsageMenuBar",
             path: "Sources/CursorUsageMenuBar"
         ),
+        .testTarget(
+            name: "CursorUsageMenuBarTests",
+            dependencies: ["CursorUsageMenuBar"],
+            path: "Tests/CursorUsageMenuBarTests"
+        ),
     ]
 )

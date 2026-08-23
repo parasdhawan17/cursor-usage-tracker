@@ -8,6 +8,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     private static let panelWidth: CGFloat = 320
 
     private let viewModel: UsageViewModel
+    private let openDashboard: () -> Void
     private let statusItem: NSStatusItem
     private let popover: NSPopover
     private let hosting: NSHostingController<MenuPanelHost>
@@ -16,10 +17,11 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     private var outsideClickMonitor: Any?
     private var localClickMonitor: Any?
 
-    init(viewModel: UsageViewModel) {
+    init(viewModel: UsageViewModel, openDashboard: @escaping () -> Void) {
         self.viewModel = viewModel
+        self.openDashboard = openDashboard
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        self.hosting = NSHostingController(rootView: MenuPanelHost(viewModel: viewModel))
+        self.hosting = NSHostingController(rootView: MenuPanelHost(viewModel: viewModel, openDashboard: openDashboard))
         self.popover = NSPopover()
         super.init()
     }
@@ -37,13 +39,13 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         updateButton()
     }
 
-    /// Opens the setup popover on first launch so users see something after install (menu bar only).
+    /// Preserves the menu-bar entry point for callers that need to draw attention to setup.
     func presentSetupPanelIfNeeded() {
-        guard viewModel.needsSetup else { return }
+        guard !viewModel.hasAnyConnection else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-            guard let self, let button = self.statusItem.button else { return }
+            guard let self else { return }
             if !self.popover.isShown {
-                self.showPopover(relativeTo: button)
+                self.openDashboard()
             }
         }
     }
@@ -68,44 +70,11 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             .sink { [weak self] _ in self?.updateButton() }
             .store(in: &cancellables)
 
-        // Do not tie these to objectWillChange — sessionTokenInput updates every keystroke and
-        // remeasuring the popover there freezes the UI on some Macs.
-        Publishers.CombineLatest(viewModel.$needsSetup, viewModel.$isEditingSession)
+        viewModel.objectWillChange
             .receive(on: RunLoop.main)
-            .sink { [weak self] _, _ in
-                self?.syncPopoverBehavior()
-                self?.resizePopoverIfVisible()
+            .sink { [weak self] _ in
+                DispatchQueue.main.async { self?.resizePopoverIfVisible() }
             }
-            .store(in: &cancellables)
-
-        Publishers.CombineLatest4(
-            viewModel.$snapshot,
-            viewModel.$isLoading,
-            viewModel.$error,
-            viewModel.$isSavingSession
-        )
-        .receive(on: RunLoop.main)
-        .sink { [weak self] _, _, _, _ in self?.resizePopoverIfVisible() }
-        .store(in: &cancellables)
-
-        viewModel.$sessionSaveError
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.resizePopoverIfVisible() }
-            .store(in: &cancellables)
-
-        viewModel.$launchAtLoginError
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.resizePopoverIfVisible() }
-            .store(in: &cancellables)
-
-        viewModel.$caffeinateError
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.resizePopoverIfVisible() }
-            .store(in: &cancellables)
-
-        viewModel.updateViewModel.objectWillChange
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.resizePopoverIfVisible() }
             .store(in: &cancellables)
     }
 
@@ -121,20 +90,6 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
     func updateButton() {
         guard let button = statusItem.button else { return }
-
-        if viewModel.menuBarShowsSetupIcon {
-            let symbol = NSImage(
-                systemSymbolName: "gearshape.fill",
-                accessibilityDescription: "Setup Cursor Usage"
-            )
-            symbol?.isTemplate = true
-            button.image = symbol
-            button.imagePosition = .imageOnly
-            button.title = ""
-            button.toolTip = "Cursor Usage — Set up session token"
-            statusItem.length = NSStatusItem.squareLength
-            return
-        }
 
         let label = viewModel.menuBarLabel
         button.toolTip = viewModel.menuBarToolTip
@@ -188,18 +143,14 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         popover.performClose(nil)
     }
 
-    /// Setup keeps the popover open for typing; usage uses semitransient so it can become key immediately.
     private func syncPopoverBehavior() {
-        popover.behavior = viewModel.showsSetupPanel ? .applicationDefined : .semitransient
+        popover.behavior = .semitransient
     }
 
     /// Transient popovers stay inactive and look dimmed until clicked; activate on open like system extras.
     private func activatePopoverWindow() {
         guard let window = popover.contentViewController?.view.window else { return }
         window.makeKey()
-        if viewModel.showsSetupPanel {
-            viewModel.requestTokenFieldFocus()
-        }
     }
 
     private func resizePopoverIfVisible() {
@@ -313,41 +264,9 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
 private struct MenuPanelHost: View {
     @ObservedObject var viewModel: UsageViewModel
+    let openDashboard: () -> Void
 
     var body: some View {
-        MenuContentView(
-            showsSetup: viewModel.showsSetupPanel,
-            sessionTokenInput: $viewModel.sessionTokenInput,
-            tokenFieldFocusToken: viewModel.tokenFieldFocusToken,
-            sessionSaveError: viewModel.sessionSaveError,
-            isSavingSession: viewModel.isSavingSession,
-            onSaveSession: { Task { await viewModel.saveSessionToken() } },
-            onCancelSessionEdit: viewModel.needsSetup
-                ? nil
-                : { viewModel.cancelEditingSession() },
-            onEditSession: { viewModel.beginEditingSession() },
-            onSignOutSession: { viewModel.signOutSession() },
-            snapshot: viewModel.snapshot,
-            error: viewModel.error,
-            isLoading: viewModel.isLoading,
-            isStale: viewModel.isShowingStaleData,
-            launchAtLoginEnabled: Binding(
-                get: { viewModel.launchAtLoginEnabled },
-                set: { viewModel.setLaunchAtLoginEnabled($0) }
-            ),
-            launchAtLoginError: viewModel.launchAtLoginError,
-            onSetLaunchAtLoginEnabled: { viewModel.setLaunchAtLoginEnabled($0) },
-            caffeinateEnabled: Binding(
-                get: { viewModel.caffeinateEnabled },
-                set: { viewModel.setCaffeinateEnabled($0) }
-            ),
-            caffeinateError: viewModel.caffeinateError,
-            onSetCaffeinateEnabled: { viewModel.setCaffeinateEnabled($0) },
-            refreshInterval: $viewModel.refreshInterval,
-            onRefresh: { Task { await viewModel.refresh() } },
-            updatePhase: viewModel.updateViewModel.phase,
-            onInstallUpdate: { Task { await viewModel.updateViewModel.installUpdate() } },
-            onDismissUpdateError: { viewModel.updateViewModel.dismissFailure() }
-        )
+        CompactMenuContentView(viewModel: viewModel, openDashboard: openDashboard)
     }
 }

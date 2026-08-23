@@ -2,7 +2,7 @@ import AppKit
 
 /// Menu bar agents have no Edit menu by default, so ⌘V does not reach text fields.
 enum AppMainMenu {
-    static func install() {
+    static func install(target: AnyObject, openDashboardAction: Selector) {
         guard NSApp.mainMenu == nil else { return }
 
         let mainMenu = NSMenu()
@@ -11,6 +11,14 @@ enum AppMainMenu {
         mainMenu.addItem(appMenuItem)
         let appMenu = NSMenu()
         appMenuItem.submenu = appMenu
+        let dashboardItem = NSMenuItem(
+            title: "Open Dashboard",
+            action: openDashboardAction,
+            keyEquivalent: ","
+        )
+        dashboardItem.target = target
+        appMenu.addItem(dashboardItem)
+        appMenu.addItem(.separator())
         appMenu.addItem(
             withTitle: "Quit Cursor Usage",
             action: #selector(NSApplication.terminate(_:)),

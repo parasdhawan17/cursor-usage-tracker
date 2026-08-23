@@ -1,12 +1,14 @@
 import AppKit
 import SwiftUI
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBar: StatusBarController?
     private var splash: LaunchSplashController?
+    private var dashboard: DashboardWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        AppMainMenu.install()
+        AppMainMenu.install(target: self, openDashboardAction: #selector(openDashboard))
         splash = LaunchSplashController()
         splash?.show()
         Task { @MainActor in
@@ -33,16 +35,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         splash?.setStatus("Starting menu bar icon…")
         await Task.yield()
-        let controller = StatusBarController(viewModel: viewModel)
+        let dashboard = DashboardWindowController(viewModel: viewModel)
+        let controller = StatusBarController(viewModel: viewModel) { [weak dashboard] in
+            dashboard?.show()
+        }
         controller.install()
         statusBar = controller
+        self.dashboard = dashboard
         viewModel.startAutoRefresh()
 
-        if viewModel.needsSetup {
+        if !viewModel.hasAnyConnection {
             markFirstLaunchHintSeen()
             splash?.setStatus(
-                "Opening setup…",
-                detail: "Paste your WorkosCursorSessionToken next. On MacBook Air, use › in the menu bar if the gear is hidden."
+                "Opening dashboard…",
+                detail: "Connect Cursor or Codex to start tracking usage."
             )
         } else {
             splash?.setStatus("Connecting to Cursor…", detail: "Fetching your usage summary.")
@@ -53,8 +59,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         await Task.yield()
         splash?.dismiss { [weak self] in
             NSApp.setActivationPolicy(.accessory)
-            if viewModel.needsSetup {
-                controller.presentSetupPanelIfNeeded()
+            if !viewModel.hasAnyConnection {
+                dashboard.show(page: .settings)
             }
             self?.splash = nil
         }
@@ -62,6 +68,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func markFirstLaunchHintSeen() {
         UserDefaults.standard.set(true, forKey: "didShowMenuBarSetupHint")
+    }
+
+    @objc private func openDashboard() {
+        dashboard?.show()
     }
 }
 
@@ -82,15 +92,22 @@ enum CursorUsageMenuBarMain {
 
 @MainActor
 final class UsageViewModel: ObservableObject {
-    @Published private(set) var snapshot: UsageSnapshot?
-    @Published private(set) var error: String?
-    @Published private(set) var isLoading = false
-    @Published private(set) var needsSetup: Bool
-    @Published var isEditingSession = false
-    @Published var sessionTokenInput = ""
-    @Published private(set) var tokenFieldFocusToken = 0
-    @Published private(set) var sessionSaveError: String?
-    @Published private(set) var isSavingSession = false
+    @Published private(set) var cursorSnapshot: UsageSnapshot?
+    @Published private(set) var cursorError: String?
+    @Published private(set) var isCursorLoading = false
+    @Published private(set) var codexSnapshot: CodexUsageSnapshot?
+    @Published private(set) var codexError: String?
+    @Published private(set) var isCodexLoading = false
+    @Published var selectedService: TrackedService = .selected {
+        didSet { TrackedService.selected = selectedService }
+    }
+    @Published var cursorTokenInput = ""
+    @Published var codexAccessTokenInput = ""
+    @Published var codexAccountIDInput = ""
+    @Published private(set) var cursorSaveError: String?
+    @Published private(set) var codexSaveError: String?
+    @Published private(set) var isSavingCursor = false
+    @Published private(set) var isSavingCodex = false
     @Published private(set) var launchAtLoginEnabled = LaunchAtLoginSettings.isEnabled
     @Published private(set) var launchAtLoginError: String?
     @Published private(set) var caffeinateEnabled = CaffeinateSettings.isEnabled
@@ -106,93 +123,89 @@ final class UsageViewModel: ObservableObject {
     let updateViewModel = UpdateViewModel()
 
     private var refreshTask: Task<Void, Never>?
-    private var fetchTask: Task<Void, Never>?
-    private var lastFetchAttempt: Date?
+    private var cursorFetchTask: Task<Void, Never>?
+    private var codexFetchTask: Task<Void, Never>?
+    private var lastFetchAttempt: [TrackedService: Date] = [:]
 
-    var isShowingStaleData: Bool {
-        error != nil && snapshot != nil
-    }
-
-    var menuBarShowsSetupIcon: Bool {
-        needsSetup
-    }
+    var hasAnyConnection: Bool { SessionTokenStore.hasToken || CodexTokenStore.hasCredentials }
 
     var menuBarLabel: String {
-        if menuBarShowsSetupIcon { return "" }
-        if isLoading && snapshot == nil { return "…" }
-        if error != nil, snapshot == nil { return "!" }
-        if let s = snapshot { return s.menuBarLabel }
-        return "—"
+        switch selectedService {
+        case .cursor:
+            if let snapshot = cursorSnapshot { return "Cursor \(UsageSnapshot.formatPercent(snapshot.primaryPercent))" }
+            return SessionTokenStore.hasToken ? "Cursor …" : "Cursor"
+        case .codex:
+            if let snapshot = codexSnapshot { return snapshot.menuBarLabel }
+            return CodexTokenStore.hasCredentials ? "Codex …" : "Codex"
+        }
     }
 
     var menuBarToolTip: String {
-        if menuBarShowsSetupIcon { return "Cursor Usage — Set up session token" }
-        if let s = snapshot { return s.menuBarToolTip }
-        if isLoading { return "Cursor Usage — Loading…" }
-        if error != nil { return "Cursor Usage — Could not load" }
-        return "Cursor Usage"
-    }
-
-    var showsSetupPanel: Bool {
-        needsSetup || isEditingSession
+        switch selectedService {
+        case .cursor: return cursorSnapshot?.menuBarToolTip ?? "Cursor usage"
+        case .codex:
+            guard let snapshot = codexSnapshot else { return "Codex usage" }
+            if let reset = snapshot.primaryWindow?.resetDescription {
+                return "Codex \(snapshot.primaryPercent.map { Int($0.rounded()).description + "% used" } ?? "usage") — resets \(reset)"
+            }
+            return "Codex usage"
+        }
     }
 
     init() {
-        needsSetup = !SessionTokenStore.hasToken
         restoreCaffeinateIfNeeded()
-        if !needsSetup {
-            Task { await refresh() }
-        }
+        if hasAnyConnection { Task { await refreshAll() } }
     }
 
-    func beginEditingSession() {
-        sessionTokenInput = SessionTokenStore.load() ?? ""
-        sessionSaveError = nil
-        isEditingSession = true
-        requestTokenFieldFocus()
-    }
-
-    func requestTokenFieldFocus() {
-        tokenFieldFocusToken += 1
-    }
-
-    func cancelEditingSession() {
-        isEditingSession = false
-        sessionTokenInput = ""
-        sessionSaveError = nil
-    }
-
-    func saveSessionToken() async {
-        let trimmed = sessionTokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
+    func saveCursorToken() async {
+        let trimmed = cursorTokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            sessionSaveError = SessionTokenStore.StoreError.emptyToken.localizedDescription
+            cursorSaveError = SessionTokenStore.StoreError.emptyToken.localizedDescription
             return
         }
-
-        isSavingSession = true
-        sessionSaveError = nil
-        defer { isSavingSession = false }
+        isSavingCursor = true
+        cursorSaveError = nil
+        defer { isSavingCursor = false }
 
         do {
             _ = try SessionTokenStore.save(trimmed)
-            needsSetup = false
-            isEditingSession = false
-            sessionTokenInput = ""
+            cursorTokenInput = ""
             startAutoRefresh()
-            await refresh()
+            await refreshCursor()
         } catch {
-            sessionSaveError = error.localizedDescription
+            cursorSaveError = error.localizedDescription
         }
     }
 
-    func signOutSession() {
-        refreshTask?.cancel()
+    func saveCodexCredentials() async {
+        let token = codexAccessTokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else {
+            codexSaveError = CodexTokenStore.StoreError.emptyToken.localizedDescription
+            return
+        }
+        isSavingCodex = true
+        codexSaveError = nil
+        defer { isSavingCodex = false }
+        do {
+            try CodexTokenStore.save(accessToken: token, accountID: codexAccountIDInput)
+            codexAccessTokenInput = ""
+            startAutoRefresh()
+            await refreshCodex()
+        } catch {
+            codexSaveError = error.localizedDescription
+        }
+    }
+
+    func removeCursorConnection() {
         SessionTokenStore.delete()
-        needsSetup = true
-        isEditingSession = false
-        sessionTokenInput = ""
-        snapshot = nil
-        error = nil
+        cursorSnapshot = nil
+        cursorError = nil
+    }
+
+    func removeCodexConnection() {
+        CodexTokenStore.delete()
+        codexSnapshot = nil
+        codexError = nil
     }
 
     func setLaunchAtLoginEnabled(_ enabled: Bool) {
@@ -230,74 +243,94 @@ final class UsageViewModel: ObservableObject {
         refreshTask = Task {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: refreshInterval.nanoseconds)
-                guard !needsSetup else { continue }
-                await refresh()
+                guard hasAnyConnection else { continue }
+                await refreshAll()
             }
         }
     }
 
-    /// Refresh when the panel opens, but not more than once per 30s (avoids duplicate in-flight calls).
     func refreshOnMenuOpen() async {
-        if let last = lastFetchAttempt, Date().timeIntervalSince(last) < 30 {
+        if let last = lastFetchAttempt[selectedService], Date().timeIntervalSince(last) < 30 {
             return
         }
-        await refresh()
+        await refresh(selectedService)
     }
 
-    func refresh() async {
-        guard !needsSetup else {
-            isLoading = false
-            return
-        }
+    func refreshAll() async {
+        async let cursor: Void = refreshCursor()
+        async let codex: Void = refreshCodex()
+        _ = await (cursor, codex)
+    }
 
-        if let existing = fetchTask {
+    func refresh(_ service: TrackedService) async {
+        switch service {
+        case .cursor: await refreshCursor()
+        case .codex: await refreshCodex()
+        }
+    }
+
+    func refreshCursor() async {
+        guard SessionTokenStore.hasToken else { return }
+        if let existing = cursorFetchTask {
             await existing.value
             return
         }
-
-        let showLoading = snapshot == nil
-        if showLoading {
-            isLoading = true
-            error = nil
-        }
-
-        lastFetchAttempt = Date()
-
-        fetchTask = Task {
+        let showLoading = cursorSnapshot == nil
+        if showLoading { isCursorLoading = true; cursorError = nil }
+        lastFetchAttempt[.cursor] = Date()
+        cursorFetchTask = Task {
             defer {
-                fetchTask = nil
-                if showLoading { isLoading = false }
+                cursorFetchTask = nil
+                if showLoading { isCursorLoading = false }
             }
-
             do {
                 let data = try await UsageFetcher.fetchOffMainActor()
-                snapshot = data
-                error = nil
-            } catch let err {
-                if snapshot == nil {
-                    error = err.localizedDescription
-                } else {
-                    error = err.localizedDescription
-                }
+                cursorSnapshot = data
+                cursorError = nil
+            } catch {
+                cursorError = error.localizedDescription
             }
         }
+        await cursorFetchTask?.value
+    }
 
-        await fetchTask?.value
+    func refreshCodex() async {
+        guard CodexTokenStore.hasCredentials else { return }
+        if let existing = codexFetchTask {
+            await existing.value
+            return
+        }
+        let showLoading = codexSnapshot == nil
+        if showLoading { isCodexLoading = true; codexError = nil }
+        lastFetchAttempt[.codex] = Date()
+        codexFetchTask = Task {
+            defer {
+                codexFetchTask = nil
+                if showLoading { isCodexLoading = false }
+            }
+            do {
+                codexSnapshot = try await CodexUsageFetcher.fetch()
+                codexError = nil
+            } catch {
+                codexError = error.localizedDescription
+            }
+        }
+        await codexFetchTask?.value
     }
 
     /// Keeps the launch splash visible until the first usage fetch finishes or times out.
     func waitForInitialLoadIfNeeded() async {
-        guard !needsSetup else { return }
+        guard hasAnyConnection else { return }
         let deadline = Date().addingTimeInterval(45)
 
         for _ in 0..<30 {
-            if isLoading || fetchTask != nil || snapshot != nil || error != nil { break }
+            if isCursorLoading || isCodexLoading || cursorFetchTask != nil || codexFetchTask != nil || cursorSnapshot != nil || codexSnapshot != nil || cursorError != nil || codexError != nil { break }
             try? await Task.sleep(nanoseconds: 50_000_000)
         }
 
         while Date() < deadline {
-            if snapshot != nil || error != nil { return }
-            if !isLoading && fetchTask == nil { return }
+            if cursorSnapshot != nil || codexSnapshot != nil || cursorError != nil || codexError != nil { return }
+            if !isCursorLoading && !isCodexLoading && cursorFetchTask == nil && codexFetchTask == nil { return }
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
     }

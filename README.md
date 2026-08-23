@@ -1,8 +1,8 @@
-# Cursor Usage Tracker
+# Cursor + Codex Usage Tracker
 
-A lightweight, unofficial tool for monitoring your [Cursor](https://cursor.com) plan usage. It calls the same dashboard endpoints as [cursor.com/dashboard/usage](https://cursor.com/dashboard/usage) and surfaces the numbers where you actually need them — in the menu bar, or in your terminal.
+A lightweight macOS menu-bar utility for monitoring [Cursor](https://cursor.com) and Codex plan usage. It keeps quick status in the menu bar and provides a native dashboard window for service-specific details and settings.
 
-> **Unofficial.** These endpoints are not documented by Cursor and can change at any time. Use your own account only. This project is not affiliated with or endorsed by Cursor.
+> **Unofficial integrations.** Cursor and Codex usage are read from undocumented dashboard endpoints that can change at any time. Use your own accounts only. This project is not affiliated with or endorsed by Cursor or OpenAI.
 
 ## Screenshots
 
@@ -27,14 +27,15 @@ Native SwiftUI utility for **macOS 13+** (Apple Silicon and Intel). Runs as a me
 
 | What you get | Details |
 |---|---|
-| **Live usage in the menu bar** | Shows `C 32%` (or `C ∞` on unlimited plans) so you can spot usage at a glance |
+| **Dual-service dashboard** | Separate Overview, Cursor, Codex, and Settings pages in a native macOS window |
+| **Live usage in the menu bar** | Shows your selected Cursor or Codex service at a glance |
 | **Plan overview** | Usage %, progress bar with even-pace marker, plan name, and days left in the billing cycle |
 | **Usage costs** | Billed (on-demand) vs included usage value — toggle between **Today** and **This cycle** |
 | **Model split** | Breakdown of API models vs Auto models as a share of plan usage |
 | **Auto-refresh** | Background updates every 1–5 minutes (configurable in the panel) |
 | **Offline-friendly** | Shows cached data with a warning if a refresh fails |
 | **In-app updates** | Checks GitHub Releases and offers the latest DMG from the menu bar panel |
-| **Secure token storage** | Session token saved locally in Application Support (mode `600`); no `.env` required |
+| **Separate secure credentials** | Cursor and Codex credentials are saved separately in Application Support (mode `600`) |
 
 ### Python CLI
 
@@ -64,9 +65,9 @@ On first launch you'll see a **gear icon** in the menu bar. Click it, paste your
 
 ---
 
-## Session token
+## Credentials
 
-Both the menu bar app and CLI authenticate with your browser session cookie.
+### Cursor
 
 1. Open [cursor.com/dashboard/usage](https://cursor.com/dashboard/usage) and sign in
 2. Open DevTools (**⌥⌘I** or **F12**) → **Application** → **Cookies** → `https://cursor.com`
@@ -75,15 +76,24 @@ Both the menu bar app and CLI authenticate with your browser session cookie.
 
 Tokens expire periodically. If you see an auth error, grab a fresh cookie from the dashboard and save it again via **Session** in the panel footer.
 
+### Codex (experimental)
+
+Codex tracking uses the internal ChatGPT Codex quota endpoint. It requires a manually supplied OAuth access token and may also require the selected ChatGPT account/workspace ID. Add these in **Dashboard → Settings → Codex**.
+
+This is not a supported OpenAI API. The endpoint or response fields may change, in which case the app will show an unavailable state without affecting Cursor tracking.
+
 ---
 
 ## Menu bar app details
 
 ### Panel
 
-Click the menu bar label to open the panel:
+Click the menu bar label for the compact panel, then select **Open Dashboard** for the full window:
 
-- **Hero** — primary usage % with a color-coded progress bar and pace indicator
+- **Overview** — side-by-side connection and usage state for Cursor and Codex
+- **Cursor** — primary usage %, costs, and model split
+- **Codex** — allowance %, reset window, and any reported credits
+- **Settings** — service credentials, selected menu-bar service, refresh interval, and app controls
 - **Usage costs** — billed vs included spend for today or the current billing cycle
 - **Model split** — how much of your plan API vs Auto models have consumed
 - **Refresh** — tap ↻ in the header, or open the panel (auto-refreshes if data is older than 30 seconds)
