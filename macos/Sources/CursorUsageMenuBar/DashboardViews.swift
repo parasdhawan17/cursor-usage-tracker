@@ -40,41 +40,37 @@ struct DashboardRootView: View {
     var body: some View {
         NavigationSplitView {
             VStack(spacing: 0) {
-                HStack(spacing: 10) {
-                    Image(systemName: "chart.line.uptrend.xyaxis")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 30, height: 30)
-                        .background(Theme.accent.gradient, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("AI Usage").font(.system(size: 13, weight: .semibold))
-                        Text("Plan monitor").font(.system(size: 10)).foregroundStyle(.secondary)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 14)
-
                 List(selection: $navigation.page) {
-                    Section("Usage") {
+                    Section("Monitor") {
                         ForEach([DashboardPage.overview, .cursor, .codex]) { page in
-                            Label(page.title, systemImage: page.icon).tag(page)
+                            Label {
+                                Text(page.title)
+                            } icon: {
+                                Image(systemName: page.icon).foregroundStyle(page.tint)
+                            }
+                            .tag(page)
                         }
                     }
-                    Section("App") {
+                    Section("Configuration") {
                         Label(DashboardPage.settings.title, systemImage: DashboardPage.settings.icon)
                             .tag(DashboardPage.settings)
                     }
                 }
                 .listStyle(.sidebar)
 
-                VStack(alignment: .leading, spacing: 7) {
+                VStack(alignment: .leading, spacing: 9) {
+                    Text("CONNECTIONS")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Theme.textTertiary)
+                        .tracking(0.5)
                     connectionRow(.cursor, connected: SessionTokenStore.hasToken)
                     connectionRow(.codex, connected: CodexTokenStore.hasCredentials)
                 }
-                .padding(12)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.quaternary)
+                .background(.ultraThinMaterial)
+                .overlay(alignment: .top) { Divider().opacity(0.55) }
             }
             .navigationSplitViewColumnWidth(min: 190, ideal: 215)
         } detail: {
@@ -93,18 +89,22 @@ struct DashboardRootView: View {
                 Button { Task { await viewModel.refreshAll() } } label: {
                     Label("Refresh all", systemImage: "arrow.clockwise")
                 }
+                .disabled(viewModel.isCursorLoading || viewModel.isCodexLoading)
                 .keyboardShortcut("r", modifiers: [.command])
+                .help("Refresh all services (⌘R)")
             }
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(Theme.dashboardBackground)
     }
 
     private func connectionRow(_ service: TrackedService, connected: Bool) -> some View {
         HStack(spacing: 6) {
-            Circle().fill(connected ? Theme.includedValue : Theme.textTertiary).frame(width: 6, height: 6)
+            Image(systemName: connected ? "checkmark.circle.fill" : "circle.dashed")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(connected ? Theme.includedValue : Theme.textTertiary)
             Text(service.title).font(.system(size: 10, weight: .medium))
             Spacer()
-            Text(connected ? "Connected" : "Not set")
+            Text(connected ? "Connected" : "Set up")
                 .font(.system(size: 9)).foregroundStyle(.secondary)
         }
     }
@@ -113,15 +113,31 @@ struct DashboardRootView: View {
 private struct DashboardPageContainer<Content: View>: View {
     let title: String
     let subtitle: String
+    let icon: String
+    let tint: Color
     @ViewBuilder let content: Content
+
+    init(
+        title: String,
+        subtitle: String,
+        icon: String = "chart.line.uptrend.xyaxis",
+        tint: Color = Theme.accent,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.icon = icon
+        self.tint = tint
+        self.content = content()
+    }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 22) {
                 HStack(alignment: .center, spacing: 14) {
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .fill(Theme.accent.opacity(0.12))
-                        .overlay(Image(systemName: "chart.line.uptrend.xyaxis").foregroundStyle(Theme.accent))
+                        .fill(tint.opacity(0.12))
+                        .overlay(Image(systemName: icon).font(.system(size: 17, weight: .semibold)).foregroundStyle(tint))
                         .frame(width: 42, height: 42)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(title).font(.system(size: 25, weight: .bold, design: .rounded))
@@ -133,6 +149,7 @@ private struct DashboardPageContainer<Content: View>: View {
             .padding(28)
             .frame(maxWidth: 980, alignment: .leading)
         }
+        .background(Theme.dashboardBackground)
     }
 }
 
@@ -142,11 +159,12 @@ struct DashboardCard<Content: View>: View {
     var body: some View {
         content
             .padding(18)
-            .background(Theme.chipBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(Theme.elevatedSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Theme.separator.opacity(0.28), lineWidth: 0.5)
+                    .strokeBorder(Theme.separator.opacity(0.24), lineWidth: 0.5)
             }
+            .shadow(color: .black.opacity(0.035), radius: 1.5, y: 1)
     }
 }
 
@@ -163,6 +181,7 @@ private struct DashboardSection<Content: View>: View {
             }
             DashboardCard { content }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -170,16 +189,53 @@ struct OverviewDashboardView: View {
     @ObservedObject var viewModel: UsageViewModel
 
     var body: some View {
-        DashboardPageContainer(title: "Overview", subtitle: "Your AI coding usage at a glance.") {
-            HStack(alignment: .top, spacing: 16) {
-                OverviewServiceCard(service: .cursor, isConnected: SessionTokenStore.hasToken, snapshotText: cursorSummary, error: viewModel.cursorError) {
+        DashboardPageContainer(
+            title: "Overview",
+            subtitle: "A live view of your connected coding plans.",
+            icon: DashboardPage.overview.icon,
+            tint: DashboardPage.overview.tint
+        ) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 290), spacing: 16)], alignment: .leading, spacing: 16) {
+                OverviewServiceCard(
+                    service: .cursor,
+                    isConnected: SessionTokenStore.hasToken,
+                    plan: viewModel.cursorSnapshot?.planName,
+                    percent: viewModel.cursorSnapshot?.primaryPercent,
+                    detail: cursorDetail,
+                    fetchedAt: viewModel.cursorSnapshot?.fetchedAt,
+                    error: viewModel.cursorError
+                ) {
                     Task { await viewModel.refreshCursor() }
                 }
-                OverviewServiceCard(service: .codex, isConnected: CodexTokenStore.hasCredentials, snapshotText: codexSummary, error: viewModel.codexError) {
+                OverviewServiceCard(
+                    service: .codex,
+                    isConnected: CodexTokenStore.hasCredentials,
+                    plan: viewModel.codexSnapshot?.planName,
+                    percent: viewModel.codexSnapshot?.primaryPercent,
+                    detail: codexDetail,
+                    fetchedAt: viewModel.codexSnapshot?.fetchedAt,
+                    error: viewModel.codexError
+                ) {
                     Task { await viewModel.refreshCodex() }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if viewModel.hasAnyConnection {
+                DashboardCard {
+                    HStack(spacing: 12) {
+                        Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                            .font(.system(size: 18))
+                            .foregroundStyle(Theme.accent)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Monitoring automatically").font(.system(size: 12, weight: .semibold))
+                            Text("Usage refreshes every \(viewModel.refreshInterval.label). You can also refresh anytime with ⌘R.")
+                                .font(.system(size: 10)).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        StatusBadge(text: "Live", color: Theme.includedValue)
+                    }
+                }
+            }
 
             if !viewModel.hasAnyConnection {
                 DashboardEmptyState(
@@ -191,49 +247,86 @@ struct OverviewDashboardView: View {
         }
     }
 
-    private var cursorSummary: String? {
+    private var cursorDetail: String? {
         guard let snapshot = viewModel.cursorSnapshot else { return nil }
-        return "\(UsageSnapshot.formatPercent(snapshot.primaryPercent)) used · \(snapshot.planName)"
+        if let days = snapshot.daysLeftInCycle {
+            return days == 0 ? "Billing cycle resets today" : "\(days) days left in this billing cycle"
+        }
+        return snapshot.onDemandEnabled ? "On-demand usage enabled" : "Included plan usage"
     }
 
-    private var codexSummary: String? {
+    private var codexDetail: String? {
         guard let snapshot = viewModel.codexSnapshot else { return nil }
-        let usage = snapshot.primaryPercent.map { "\(Int($0.rounded()))% used" } ?? "Usage unavailable"
-        return "\(usage) · \(snapshot.planName)"
+        if let reset = snapshot.primaryWindow?.resetDescription { return "Primary window resets \(reset)" }
+        return snapshot.isAllowed ? "Codex is currently available" : "Codex is currently limited"
     }
 }
 
 private struct OverviewServiceCard: View {
     let service: TrackedService
     let isConnected: Bool
-    let snapshotText: String?
+    let plan: String?
+    let percent: Double?
+    let detail: String?
+    let fetchedAt: Date?
     let error: String?
     let refresh: () -> Void
 
     var body: some View {
         DashboardCard {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 16) {
                 HStack {
-                    Label(service.title, systemImage: service.icon).font(.headline)
+                    ServiceIcon(service: service, size: 34)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(service.title).font(.system(size: 13, weight: .semibold))
+                        Text(plan ?? (isConnected ? "Connected plan" : "No account"))
+                            .font(.system(size: 10)).foregroundStyle(.secondary)
+                    }
                     Spacer()
-                    Circle().fill(isConnected ? Theme.includedValue : Theme.textTertiary).frame(width: 7, height: 7)
+                    StatusBadge(text: isConnected ? "Connected" : "Set up", color: isConnected ? Theme.includedValue : Theme.textTertiary)
                 }
-            if let snapshotText {
-                    Text(snapshotText).font(.system(size: 17, weight: .semibold, design: .rounded)).monospacedDigit()
-            } else if isConnected {
-                Text(error ?? "Loading usage…").foregroundStyle(error == nil ? Color.secondary : Color.red)
-            } else {
-                Text("Not connected").foregroundStyle(.secondary)
-            }
-                HStack {
-                    Text(isConnected ? "Live account" : "Connect in Settings")
+
+                if let percent {
+                    HStack(alignment: .lastTextBaseline, spacing: 5) {
+                        Text(UsageSnapshot.formatPercent(percent))
+                            .font(.system(size: 30, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                        Text("used").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+                    }
+                    ProgressView(value: percent, total: 100)
+                        .tint(Theme.usageColor(percent: percent))
+                    Text(detail ?? "Plan usage is available.")
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                } else if isConnected {
+                    Label(error ?? "Loading usage…", systemImage: error == nil ? "clock" : "exclamationmark.triangle")
+                        .font(.system(size: 11))
+                        .foregroundStyle(error == nil ? Color.secondary : Theme.destructive)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("Connect this service in Settings to include it in your overview.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
-                    Spacer()
-                    if isConnected { Button("Refresh", action: refresh).controlSize(.small) }
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+
+                Divider().opacity(0.55)
+                HStack(spacing: 6) {
+                    if let fetchedAt {
+                        Image(systemName: "clock")
+                        Text("Updated \(fetchedAt.formatted(date: .omitted, time: .shortened))")
+                    } else {
+                        Text(isConnected ? "Waiting for data" : "Connection required")
+                    }
+                    Spacer()
+                    if isConnected {
+                        Button(action: refresh) { Image(systemName: "arrow.clockwise") }
+                            .buttonStyle(.borderless)
+                            .help("Refresh \(service.title)")
+                    }
+                }
+                .font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
             }
         }
-        .frame(maxWidth: 330, minHeight: 150, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 210, alignment: .leading)
     }
 }
 
@@ -242,15 +335,29 @@ struct CursorDashboardView: View {
     @State private var costPeriod: UsageCostsPanel.Period = .today
 
     var body: some View {
-        DashboardPageContainer(title: "Cursor", subtitle: "Plan usage and billing details from your Cursor dashboard.") {
+        DashboardPageContainer(
+            title: "Cursor",
+            subtitle: "Plan balance, billing, and model routing.",
+            icon: DashboardPage.cursor.icon,
+            tint: DashboardPage.cursor.tint
+        ) {
             if let snapshot = viewModel.cursorSnapshot {
                 UsageHeroCard(
                     title: snapshot.planName,
                     percent: snapshot.primaryPercent,
                     pacePercent: snapshot.evenPacePercent,
-                    resetText: snapshot.daysLeftInCycle.map { $0 == 0 ? "Resets today" : "\($0) days left" }
+                    resetText: snapshot.daysLeftInCycle.map { $0 == 0 ? "Resets today" : "Resets in \($0) days" },
+                    updatedAt: snapshot.fetchedAt
                 )
-                HStack(alignment: .top, spacing: 16) {
+
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 132), spacing: 12)], spacing: 12) {
+                    DashboardMetricCard(title: "Included used", value: snapshot.used.formatted(), detail: "of \(snapshot.limit.formatted())", icon: "chart.bar.fill", tint: Theme.apiModels)
+                    DashboardMetricCard(title: "Included left", value: snapshot.remaining.formatted(), detail: "plan units", icon: "arrow.down.circle", tint: Theme.includedValue)
+                    DashboardMetricCard(title: "Requests today", value: snapshot.todayEventCount?.formatted() ?? "—", detail: "since midnight", icon: "arrow.left.arrow.right", tint: Theme.accent)
+                    DashboardMetricCard(title: "On-demand", value: snapshot.onDemandEnabled ? "Enabled" : "Off", detail: snapshot.onDemandUsed.map { "\($0.formatted()) used" } ?? "usage billing", icon: "creditcard", tint: snapshot.onDemandEnabled ? Theme.warning : Theme.textTertiary)
+                }
+
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 16)], alignment: .leading, spacing: 16) {
                     DashboardSection(title: "Usage costs", subtitle: "Billed and included value") {
                         UsageCostsPanel(
                             period: $costPeriod,
@@ -280,24 +387,78 @@ struct CodexDashboardView: View {
     @ObservedObject var viewModel: UsageViewModel
 
     var body: some View {
-        DashboardPageContainer(title: "Codex", subtitle: "Experimental usage data from your ChatGPT-authenticated Codex account.") {
+        DashboardPageContainer(
+            title: "Codex",
+            subtitle: "Rate-limit windows and account availability.",
+            icon: DashboardPage.codex.icon,
+            tint: DashboardPage.codex.tint
+        ) {
             if let snapshot = viewModel.codexSnapshot {
                 if let percent = snapshot.primaryPercent {
                     UsageHeroCard(
                         title: snapshot.planName,
                         percent: percent,
                         pacePercent: snapshot.primaryWindow?.evenPacePercent(),
-                        resetText: snapshot.primaryWindow?.resetDescription.map { "Resets \($0)" }
+                        resetText: snapshot.primaryWindow?.resetDescription.map { "Resets \($0)" },
+                        updatedAt: snapshot.fetchedAt
                     )
                 }
-                HStack(spacing: 16) {
-                    CodexMetricCard(title: "Primary window", value: snapshot.primaryPercent.map { "\(Int($0.rounded()))% used" } ?? "Unavailable", icon: "gauge.with.dots.needle.67percent")
-                    CodexMetricCard(title: "Secondary window", value: snapshot.secondaryWindow.map { "\(Int($0.usedPercent.rounded()))% used" } ?? "Not reported", icon: "calendar")
-                    CodexMetricCard(title: "Credits", value: snapshot.creditsRemaining.map { $0.formatted() } ?? "Not reported", icon: "creditcard")
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 12)], spacing: 12) {
+                    if let window = snapshot.primaryWindow {
+                        DashboardMetricCard(
+                            title: window.windowDescription.map { "\($0) window" } ?? "Current window",
+                            value: "\(Int(window.usedPercent.rounded()))% used",
+                            detail: window.resetCountdown().map { "Resets in \($0)" } ?? "Reset not reported",
+                            icon: "gauge.with.dots.needle.67percent",
+                            tint: Theme.autoModels
+                        )
+                        DashboardMetricCard(
+                            title: "Allowance left",
+                            value: UsageSnapshot.formatPercent(window.remainingPercent),
+                            detail: "in the current window",
+                            icon: "arrow.down.circle",
+                            tint: Theme.includedValue
+                        )
+                    }
+                    if let today = viewModel.codexTodayUsage {
+                        DashboardMetricCard(
+                            title: "Observed today",
+                            value: today.displayValue,
+                            detail: "since \(today.firstObservedAt.formatted(date: .omitted, time: .shortened))",
+                            icon: "sun.max.fill",
+                            tint: Theme.warning
+                        )
+                    }
+                    if let secondary = snapshot.secondaryWindow {
+                        DashboardMetricCard(
+                            title: secondary.windowDescription.map { "\($0) window" } ?? "Secondary window",
+                            value: "\(Int(secondary.usedPercent.rounded()))% used",
+                            detail: secondary.resetCountdown().map { "Resets in \($0)" } ?? "Reset not reported",
+                            icon: "calendar",
+                            tint: Theme.apiModels
+                        )
+                    }
+                    if snapshot.creditsUnlimited || (snapshot.creditsRemaining ?? 0) > 0 {
+                        DashboardMetricCard(
+                            title: "Credits",
+                            value: snapshot.creditsUnlimited ? "Unlimited" : snapshot.creditsRemaining?.formatted() ?? "—",
+                            detail: "remaining balance",
+                            icon: "creditcard",
+                            tint: Theme.includedValue
+                        )
+                    }
                 }
                 if !snapshot.isAllowed {
-                    Label("Codex reports that this account is currently limited.", systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
+                    DashboardCard {
+                        HStack(spacing: 10) {
+                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.warning)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Codex is currently limited").font(.system(size: 12, weight: .semibold))
+                                Text("The service reported that this account cannot start additional work until its allowance resets.")
+                                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
                 }
             } else {
                 ServiceEmptyState(service: .codex, connected: CodexTokenStore.hasCredentials, error: viewModel.codexError) { Task { await viewModel.refreshCodex() } }
@@ -311,6 +472,7 @@ struct UsageHeroCard: View {
     let percent: Double
     var pacePercent: Double? = nil
     let resetText: String?
+    var updatedAt: Date? = nil
 
     var body: some View {
         DashboardCard {
@@ -344,8 +506,18 @@ struct UsageHeroCard: View {
                         Spacer()
                         Text("100%").font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
                     }
-                    if pacePercent != nil, let resetText {
-                        Text(resetText).font(.system(size: 11)).foregroundStyle(.secondary)
+                    if pacePercent != nil || updatedAt != nil {
+                        HStack {
+                            if pacePercent != nil, let resetText {
+                                Label(resetText, systemImage: "calendar")
+                            }
+                            Spacer()
+                            if let updatedAt {
+                                Label("Updated \(updatedAt.formatted(date: .omitted, time: .shortened))", systemImage: "clock")
+                            }
+                        }
+                        .font(.system(size: 10))
+                        .foregroundStyle(Theme.textTertiary)
                     }
                 }
             }
@@ -362,20 +534,23 @@ struct UsageHeroCard: View {
     }
 }
 
-private struct CodexMetricCard: View {
+private struct DashboardMetricCard: View {
     let title: String
     let value: String
+    let detail: String
     let icon: String
+    let tint: Color
 
     var body: some View {
         DashboardCard {
             HStack(spacing: 12) {
-                Image(systemName: icon).font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.accent)
-                    .frame(width: 30, height: 30).background(Theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                Image(systemName: icon).font(.system(size: 14, weight: .semibold)).foregroundStyle(tint)
+                    .frame(width: 30, height: 30).background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.caption).foregroundStyle(.secondary)
-                Text(value).font(.headline).monospacedDigit()
-            }
+                    Text(title).font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text(value).font(.system(size: 15, weight: .semibold, design: .rounded)).monospacedDigit()
+                    Text(detail).font(.system(size: 9)).foregroundStyle(Theme.textTertiary).lineLimit(1)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -421,12 +596,29 @@ struct SettingsDashboardView: View {
     @ObservedObject var viewModel: UsageViewModel
 
     var body: some View {
-        DashboardPageContainer(title: "Settings", subtitle: "Connections and app preferences.") {
+        DashboardPageContainer(
+            title: "Settings",
+            subtitle: "Connections, refresh behavior, and app preferences.",
+            icon: DashboardPage.settings.icon,
+            tint: DashboardPage.settings.tint
+        ) {
             DashboardSection(title: "Menu bar", subtitle: "Choose the service shown in the menu bar") {
-                Picker("Display", selection: $viewModel.selectedService) {
-                    ForEach(TrackedService.allCases) { service in Text(service.title).tag(service) }
+                HStack(spacing: 12) {
+                    Image(systemName: "menubar.rectangle")
+                        .font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.accent)
+                        .frame(width: 30, height: 30).background(Theme.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Displayed service").font(.system(size: 12, weight: .medium))
+                        Text("Its icon and current usage stay visible in the menu bar.").font(.system(size: 10)).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Picker("Display", selection: $viewModel.selectedService) {
+                        ForEach(TrackedService.allCases) { service in Text(service.title).tag(service) }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 180)
                 }
-                .pickerStyle(.segmented)
             }
             DashboardSection(title: "Cursor", subtitle: "Dashboard session connection") { cursorSettings }
             DashboardSection(title: "Codex", subtitle: "Experimental ChatGPT account connection") { codexSettings }
@@ -436,45 +628,76 @@ struct SettingsDashboardView: View {
     }
 
     private var cursorSettings: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
+            connectionHeader(service: .cursor, connected: SessionTokenStore.hasToken, detail: "Cursor dashboard session")
+            Divider().opacity(0.55)
             CredentialGuide(service: .cursor)
+            SettingsFieldLabel(title: "Session token", detail: "WorkosCursorSessionToken")
             SecureField("WorkosCursorSessionToken", text: $viewModel.cursorTokenInput)
                 .textFieldStyle(.roundedBorder)
             HStack(spacing: 10) {
                 Button(SessionTokenStore.hasToken ? "Replace Cursor token" : "Save Cursor token") { Task { await viewModel.saveCursorToken() } }
                     .buttonStyle(.borderedProminent)
                 if SessionTokenStore.hasToken { Button("Remove", role: .destructive) { viewModel.removeCursorConnection() }.buttonStyle(.bordered) }
-                if let error = viewModel.cursorSaveError { Text(error).font(.caption).foregroundStyle(.red) }
             }
-            Text("Saved locally with owner-only permissions.").font(.caption).foregroundStyle(.secondary)
+            if let error = viewModel.cursorSaveError { InlineNotice(text: error, icon: "exclamationmark.triangle.fill", color: Theme.destructive) }
+            InlineNotice(text: "Stored locally on this Mac with owner-only permissions.", icon: "lock.fill", color: Theme.textSecondary)
         }
     }
 
     private var codexSettings: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
+            connectionHeader(service: .codex, connected: CodexTokenStore.hasCredentials, detail: "Experimental ChatGPT connection")
+            Divider().opacity(0.55)
             CredentialGuide(service: .codex)
+            SettingsFieldLabel(title: "OAuth access token", detail: "Required")
             SecureField("OAuth access token", text: $viewModel.codexAccessTokenInput)
                 .textFieldStyle(.roundedBorder)
+            SettingsFieldLabel(title: "Account or workspace ID", detail: "Optional")
             TextField("ChatGPT account/workspace ID (optional)", text: $viewModel.codexAccountIDInput)
                 .textFieldStyle(.roundedBorder)
             HStack(spacing: 10) {
                 Button(CodexTokenStore.hasCredentials ? "Replace Codex credentials" : "Save Codex credentials") { Task { await viewModel.saveCodexCredentials() } }
                     .buttonStyle(.borderedProminent)
                 if CodexTokenStore.hasCredentials { Button("Remove", role: .destructive) { viewModel.removeCodexConnection() }.buttonStyle(.bordered) }
-                if let error = viewModel.codexSaveError { Text(error).font(.caption).foregroundStyle(.red) }
             }
-            Text("This is an unsupported integration and may stop working if ChatGPT changes its internal endpoint.").font(.caption).foregroundStyle(.secondary)
+            if let error = viewModel.codexSaveError { InlineNotice(text: error, icon: "exclamationmark.triangle.fill", color: Theme.destructive) }
+            InlineNotice(text: "This unsupported integration depends on an internal endpoint and may change without notice.", icon: "flask.fill", color: Theme.warning)
         }
     }
 
     private var appSettings: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Picker("Auto-refresh", selection: $viewModel.refreshInterval) {
-                ForEach(RefreshInterval.allCases) { interval in Text("Every \(interval.label)").tag(interval) }
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                PreferenceIcon(symbol: "arrow.clockwise", color: Theme.accent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Auto-refresh").font(.system(size: 12, weight: .medium))
+                    Text("Keep menu-bar usage current in the background.").font(.system(size: 10)).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Picker("Auto-refresh", selection: $viewModel.refreshInterval) {
+                    ForEach(RefreshInterval.allCases) { interval in Text("Every \(interval.label)").tag(interval) }
+                }
+                .labelsHidden()
+                .frame(width: 150)
             }
-            Toggle("Start at Login", isOn: Binding(get: { viewModel.launchAtLoginEnabled }, set: { viewModel.setLaunchAtLoginEnabled($0) }))
-            Toggle("Keep Mac awake while running", isOn: Binding(get: { viewModel.caffeinateEnabled }, set: { viewModel.setCaffeinateEnabled($0) }))
-            Text("Version \(AppVersion.current)").font(.caption).foregroundStyle(.secondary)
+            .padding(.vertical, 6)
+            Divider().padding(.leading, 42)
+            PreferenceToggleRow(
+                icon: "power",
+                color: Theme.includedValue,
+                title: "Start at Login",
+                detail: "Launch quietly and keep the tracker in the menu bar.",
+                isOn: Binding(get: { viewModel.launchAtLoginEnabled }, set: { viewModel.setLaunchAtLoginEnabled($0) })
+            )
+            Divider().padding(.leading, 42)
+            PreferenceToggleRow(
+                icon: "moon.zzz.fill",
+                color: Theme.autoModels,
+                title: "Keep Mac awake",
+                detail: "Prevent system sleep while the tracker is running.",
+                isOn: Binding(get: { viewModel.caffeinateEnabled }, set: { viewModel.setCaffeinateEnabled($0) })
+            )
         }
     }
 
@@ -503,6 +726,78 @@ struct SettingsDashboardView: View {
                 Button("Check for Updates") { Task { await viewModel.updateViewModel.checkForUpdates(force: true) } }
             }
         }
+    }
+
+    private func connectionHeader(service: TrackedService, connected: Bool, detail: String) -> some View {
+        HStack(spacing: 10) {
+            ServiceIcon(service: service, size: 32)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(service.title).font(.system(size: 12, weight: .semibold))
+                Text(detail).font(.system(size: 10)).foregroundStyle(.secondary)
+            }
+            Spacer()
+            StatusBadge(text: connected ? "Connected" : "Not connected", color: connected ? Theme.includedValue : Theme.textTertiary)
+        }
+    }
+}
+
+private struct SettingsFieldLabel: View {
+    let title: String
+    let detail: String
+
+    var body: some View {
+        HStack {
+            Text(title).font(.system(size: 11, weight: .medium))
+            Spacer()
+            Text(detail).font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
+        }
+    }
+}
+
+private struct InlineNotice: View {
+    let text: String
+    let icon: String
+    let color: Color
+
+    var body: some View {
+        Label(text, systemImage: icon)
+            .font(.system(size: 10))
+            .foregroundStyle(color)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private struct PreferenceIcon: View {
+    let symbol: String
+    let color: Color
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(color)
+            .frame(width: 30, height: 30)
+            .background(color.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct PreferenceToggleRow: View {
+    let icon: String
+    let color: Color
+    let title: String
+    let detail: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            PreferenceIcon(symbol: icon, color: color)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 12, weight: .medium))
+                Text(detail).font(.system(size: 10)).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Toggle("", isOn: $isOn).labelsHidden()
+        }
+        .padding(.vertical, 8)
     }
 }
 

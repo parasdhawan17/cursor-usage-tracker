@@ -10,6 +10,28 @@ struct CodexQuotaWindow: Equatable {
         return resetAt.formatted(date: .abbreviated, time: .shortened)
     }
 
+    var remainingPercent: Double { max(0, 100 - usedPercent) }
+
+    var windowDescription: String? {
+        guard let windowSeconds, windowSeconds > 0 else { return nil }
+        let days = windowSeconds / 86_400
+        if days > 0 { return "\(days) day\(days == 1 ? "" : "s")" }
+        let hours = windowSeconds / 3_600
+        if hours > 0 { return "\(hours) hour\(hours == 1 ? "" : "s")" }
+        return "\(windowSeconds / 60) min"
+    }
+
+    func resetCountdown(now: Date = Date()) -> String? {
+        guard let resetAt else { return nil }
+        let remaining = resetAt.timeIntervalSince(now)
+        guard remaining > 0 else { return "Now" }
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = remaining >= 86_400 ? [.day, .hour] : [.hour, .minute]
+        formatter.unitsStyle = .abbreviated
+        formatter.maximumUnitCount = 2
+        return formatter.string(from: remaining)
+    }
+
     /// Expected consumed quota if this rate-limit window were used evenly from its start until now.
     func evenPacePercent(now: Date = Date()) -> Double? {
         guard let resetAt, let windowSeconds, windowSeconds > 0 else { return nil }
@@ -24,6 +46,10 @@ struct CodexUsageSnapshot: Equatable {
     let primaryWindow: CodexQuotaWindow?
     let secondaryWindow: CodexQuotaWindow?
     let creditsRemaining: Double?
+    let creditsUnlimited: Bool
+    let approximateLocalMessages: ClosedRange<Int>?
+    let approximateCloudMessages: ClosedRange<Int>?
+    let resetCreditsAvailable: Int?
     let isAllowed: Bool
     let fetchedAt: Date
 
@@ -102,12 +128,18 @@ enum CodexUsageFetcher {
         let plan = (json["plan_type"] as? String ?? json["planType"] as? String ?? "Codex").capitalized
         let allowed = rateLimit["allowed"] as? Bool ?? !(rateLimit["limit_reached"] as? Bool ?? false)
         let credits = json["credits"] as? [String: Any]
+        let resetCredits = json["rate_limit_reset_credits"] as? [String: Any]
+            ?? json["rateLimitResetCredits"] as? [String: Any]
 
         return CodexUsageSnapshot(
             planName: plan,
             primaryWindow: primary,
             secondaryWindow: secondary,
             creditsRemaining: numeric(credits?["remaining"]) ?? numeric(credits?["balance"]),
+            creditsUnlimited: credits?["unlimited"] as? Bool ?? false,
+            approximateLocalMessages: integerRange(credits?["approx_local_messages"] ?? credits?["approxLocalMessages"]),
+            approximateCloudMessages: integerRange(credits?["approx_cloud_messages"] ?? credits?["approxCloudMessages"]),
+            resetCreditsAvailable: numeric(resetCredits?["applicable_available_count"] ?? resetCredits?["applicableAvailableCount"] ?? resetCredits?["available_count"] ?? resetCredits?["availableCount"]).map(Int.init),
             isAllowed: allowed,
             fetchedAt: fetchedAt
         )
@@ -126,5 +158,12 @@ enum CodexUsageFetcher {
         if let value = value as? NSNumber { return value.doubleValue }
         if let value = value as? String { return Double(value) }
         return nil
+    }
+
+    private static func integerRange(_ value: Any?) -> ClosedRange<Int>? {
+        guard let values = value as? [Any], values.count >= 2,
+              let lower = numeric(values[0]), let upper = numeric(values[1])
+        else { return nil }
+        return Int(lower)...Int(upper)
     }
 }

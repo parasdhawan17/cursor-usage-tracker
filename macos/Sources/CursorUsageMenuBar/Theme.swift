@@ -10,6 +10,9 @@ enum Theme {
     static let paceMarker = Color(nsColor: .secondaryLabelColor)
     static let progressTrack = Color(nsColor: .quaternaryLabelColor).opacity(0.45)
     static let chipBackground = systemFillColor
+    static let contentSurface = Color(nsColor: .controlBackgroundColor).opacity(0.72)
+    static let elevatedSurface = Color(nsColor: .textBackgroundColor)
+    static let dashboardBackground = Color(nsColor: .windowBackgroundColor)
     static let separator = Color(nsColor: .separatorColor)
     static let warning = Color(nsColor: .systemOrange)
     static let warningBackground = Color(nsColor: .systemOrange).opacity(0.14)

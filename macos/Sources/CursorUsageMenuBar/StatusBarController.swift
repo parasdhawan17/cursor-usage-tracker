@@ -2,7 +2,7 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// Owns the NSStatusItem — menu bar shows "C 32%" text.
+/// Owns the compact, glanceable menu-bar status item.
 @MainActor
 final class StatusBarController: NSObject, NSPopoverDelegate {
     private static let panelWidth: CGFloat = 320
@@ -91,11 +91,13 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     func updateButton() {
         guard let button = statusItem.button else { return }
 
-        let label = viewModel.menuBarLabel
         button.toolTip = viewModel.menuBarToolTip
-        button.image = nil
-        button.imagePosition = .noImage
-        button.title = label
+        let symbol = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
+        button.image = NSImage(systemSymbolName: viewModel.selectedService.icon, accessibilityDescription: viewModel.selectedService.title)?
+            .withSymbolConfiguration(symbol)
+        button.image?.isTemplate = true
+        button.imagePosition = .imageLeading
+        button.title = " \(viewModel.menuBarValueLabel)"
         statusItem.length = NSStatusItem.variableLength
     }
 

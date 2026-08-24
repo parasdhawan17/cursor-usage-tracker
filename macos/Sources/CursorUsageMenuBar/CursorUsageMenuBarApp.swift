@@ -96,6 +96,7 @@ final class UsageViewModel: ObservableObject {
     @Published private(set) var cursorError: String?
     @Published private(set) var isCursorLoading = false
     @Published private(set) var codexSnapshot: CodexUsageSnapshot?
+    @Published private(set) var codexTodayUsage: CodexDailyUsage?
     @Published private(set) var codexError: String?
     @Published private(set) var isCodexLoading = false
     @Published var selectedService: TrackedService = .selected {
@@ -138,6 +139,23 @@ final class UsageViewModel: ObservableObject {
             if let snapshot = codexSnapshot { return snapshot.menuBarLabel }
             return CodexTokenStore.hasCredentials ? "Codex …" : "Codex"
         }
+    }
+
+    var menuBarValueLabel: String {
+        switch selectedService {
+        case .cursor:
+            if let snapshot = cursorSnapshot {
+                return snapshot.isUnlimited ? "∞" : UsageSnapshot.formatPercent(snapshot.primaryPercent)
+            }
+            return SessionTokenStore.hasToken ? "…" : "—"
+        case .codex:
+            if let percent = codexSnapshot?.primaryPercent { return "\(Int(percent.rounded()))%" }
+            return CodexTokenStore.hasCredentials ? "…" : "—"
+        }
+    }
+
+    var isSelectedServiceLoading: Bool {
+        selectedService == .cursor ? isCursorLoading : isCodexLoading
     }
 
     var menuBarToolTip: String {
@@ -205,6 +223,7 @@ final class UsageViewModel: ObservableObject {
     func removeCodexConnection() {
         CodexTokenStore.delete()
         codexSnapshot = nil
+        codexTodayUsage = nil
         codexError = nil
     }
 
@@ -309,7 +328,9 @@ final class UsageViewModel: ObservableObject {
                 if showLoading { isCodexLoading = false }
             }
             do {
-                codexSnapshot = try await CodexUsageFetcher.fetch()
+                let snapshot = try await CodexUsageFetcher.fetch()
+                codexSnapshot = snapshot
+                codexTodayUsage = CodexDailyUsageTracker.record(snapshot)
                 codexError = nil
             } catch {
                 codexError = error.localizedDescription
