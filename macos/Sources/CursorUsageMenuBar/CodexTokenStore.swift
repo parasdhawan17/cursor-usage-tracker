@@ -24,6 +24,9 @@ enum CodexTokenStore {
     static func save(accessToken: String, accountID: String?) throws {
         let token = accessToken.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !token.isEmpty else { throw StoreError.emptyToken }
+        guard !token.contains(where: { $0.isWhitespace || $0 == "\"" || $0 == "," || $0 == "{" || $0 == "}" }) else {
+            throw StoreError.invalidToken
+        }
         let id = accountID?.trimmingCharacters(in: .whitespacesAndNewlines)
         let credentials = Credentials(accessToken: token, accountID: id?.isEmpty == true ? nil : id)
         try FileManager.default.createDirectory(at: storageDirectory, withIntermediateDirectories: true)
@@ -47,9 +50,41 @@ enum CodexTokenStore {
 
     enum StoreError: LocalizedError {
         case emptyToken
+        case invalidToken
 
         var errorDescription: String? {
-            "Enter a Codex access token before saving."
+            switch self {
+            case .emptyToken: return "Enter a Codex access token before saving."
+            case .invalidToken: return "Enter only the access_token value, not the surrounding JSON or refresh token."
+            }
+        }
+    }
+
+    /// Reads the access token and account ID from the Codex CLI's file-backed auth record.
+    /// This intentionally does not attempt to read the OS credential store.
+    static func loadFromCodexAuthFile() throws -> Credentials {
+        let url = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex", isDirectory: true)
+            .appendingPathComponent("auth.json", isDirectory: false)
+        guard let data = try? Data(contentsOf: url) else { throw AutoFillError.fileNotFound }
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let tokens = object["tokens"] as? [String: Any],
+              let accessToken = tokens["access_token"] as? String,
+              !accessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { throw AutoFillError.invalidFile }
+        let accountID = (tokens["account_id"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return Credentials(accessToken: accessToken, accountID: accountID?.isEmpty == true ? nil : accountID)
+    }
+
+    enum AutoFillError: LocalizedError {
+        case fileNotFound
+        case invalidFile
+
+        var errorDescription: String? {
+            switch self {
+            case .fileNotFound: return "Could not find ~/.codex/auth.json. Sign in to Codex first."
+            case .invalidFile: return "~/.codex/auth.json does not contain a usable access_token."
+            }
         }
     }
 }

@@ -107,6 +107,7 @@ final class UsageViewModel: ObservableObject {
     @Published var codexAccountIDInput = ""
     @Published private(set) var cursorSaveError: String?
     @Published private(set) var codexSaveError: String?
+    @Published private(set) var codexAutoFillError: String?
     @Published private(set) var isSavingCursor = false
     @Published private(set) var isSavingCodex = false
     @Published private(set) var launchAtLoginEnabled = LaunchAtLoginSettings.isEnabled
@@ -211,6 +212,18 @@ final class UsageViewModel: ObservableObject {
             await refreshCodex()
         } catch {
             codexSaveError = error.localizedDescription
+        }
+    }
+
+    func autoFillCodexCredentials() {
+        codexAutoFillError = nil
+        codexSaveError = nil
+        do {
+            let credentials = try CodexTokenStore.loadFromCodexAuthFile()
+            codexAccessTokenInput = credentials.accessToken
+            codexAccountIDInput = credentials.accountID ?? ""
+        } catch {
+            codexAutoFillError = error.localizedDescription
         }
     }
 

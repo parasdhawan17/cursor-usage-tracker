@@ -650,6 +650,16 @@ struct SettingsDashboardView: View {
             connectionHeader(service: .codex, connected: CodexTokenStore.hasCredentials, detail: "Experimental ChatGPT connection")
             Divider().opacity(0.55)
             CredentialGuide(service: .codex)
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Codex CLI credentials").font(.system(size: 11, weight: .medium))
+                    Text("Read access_token and account_id from ~/.codex/auth.json.")
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Auto fill") { viewModel.autoFillCodexCredentials() }
+                    .buttonStyle(.bordered)
+            }
             SettingsFieldLabel(title: "OAuth access token", detail: "Required")
             SecureField("OAuth access token", text: $viewModel.codexAccessTokenInput)
                 .textFieldStyle(.roundedBorder)
@@ -662,6 +672,7 @@ struct SettingsDashboardView: View {
                 if CodexTokenStore.hasCredentials { Button("Remove", role: .destructive) { viewModel.removeCodexConnection() }.buttonStyle(.bordered) }
             }
             if let error = viewModel.codexSaveError { InlineNotice(text: error, icon: "exclamationmark.triangle.fill", color: Theme.destructive) }
+            if let error = viewModel.codexAutoFillError { InlineNotice(text: error, icon: "exclamationmark.triangle.fill", color: Theme.destructive) }
             InlineNotice(text: "This unsupported integration depends on an internal endpoint and may change without notice.", icon: "flask.fill", color: Theme.warning)
         }
     }
@@ -841,8 +852,8 @@ private struct CredentialGuide: View {
                 Button("Open Codex") { NSWorkspace.shared.open(Self.codexURL) }
                     .controlSize(.small)
             }
-            credentialStep(2, "Locate your Codex OAuth record", "For Codex CLI, open ~/.codex/auth.json. This app never reads that file automatically.")
-            credentialStep(3, "Copy your access token", "Paste tokens.access_token below. If tokens.account_id is present, add it to the optional Account ID field.")
+            credentialStep(2, "Locate your Codex OAuth record", "For Codex CLI, credentials are stored in ~/.codex/auth.json. Use Auto fill below to read the access_token and account_id fields.")
+            credentialStep(3, "Review and connect", "Check the populated fields, then select Save Codex credentials. The app never saves your refresh token.")
             Label("Use an OAuth access token—not a browser cookie.", systemImage: "lock.shield")
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(Theme.warning)
