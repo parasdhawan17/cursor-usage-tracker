@@ -7,36 +7,35 @@ struct CompactMenuContentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             panelHeader
-            Divider().opacity(0.6)
             VStack(alignment: .leading, spacing: 12) {
-                Picker("Service", selection: $viewModel.selectedService) {
-                    ForEach(TrackedService.allCases) { service in
-                        Label(service.title, systemImage: service.icon).tag(service)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
+                ServiceSelector(selection: $viewModel.selectedService)
                 selectedSummary
                 quickInsights
             }
-            .padding(14)
-            Divider().opacity(0.6)
+            .padding(.horizontal, 14)
+            .padding(.top, 3)
+            .padding(.bottom, 14)
             panelFooter
         }
-        .frame(width: 320)
+        .frame(width: 336)
         .glassPanelBackground()
-        .animation(.easeOut(duration: 0.2), value: viewModel.selectedService)
+        .animation(.easeInOut(duration: 0.22), value: viewModel.selectedService)
     }
 
     private var panelHeader: some View {
         HStack(spacing: 10) {
-            ServiceIcon(service: viewModel.selectedService, size: 30)
+            ServiceIcon(service: viewModel.selectedService, size: 32)
             VStack(alignment: .leading, spacing: 1) {
                 Text("\(viewModel.selectedService.title) Usage")
-                    .font(.system(size: 13, weight: .semibold))
-                Text(headerStatus)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 14, weight: .semibold))
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(headerStatusColor)
+                        .frame(width: 5, height: 5)
+                    Text(headerStatus)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(Theme.textSecondary)
+                }
             }
             Spacer(minLength: 8)
             if viewModel.isSelectedServiceLoading { ProgressView().controlSize(.small) }
@@ -52,24 +51,39 @@ struct CompactMenuContentView: View {
             .keyboardShortcut("r", modifiers: [.command])
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.top, 14)
+        .padding(.bottom, 12)
+        .background(Theme.headerSurface)
     }
 
     private var panelFooter: some View {
         HStack(spacing: 8) {
             Button(action: openDashboard) {
-                Label("Open Dashboard", systemImage: "rectangle.on.rectangle")
+                HStack(spacing: 8) {
+                    Image(systemName: "rectangle.on.rectangle")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Theme.accent)
+                    Text("Open Dashboard")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.textPrimary)
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Theme.textTertiary)
+                }
+                .padding(.horizontal, 10)
+                .frame(maxWidth: .infinity, minHeight: 30)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.regular)
+            .buttonStyle(HoverRowButtonStyle())
             .keyboardShortcut(",", modifiers: [.command])
-            Spacer()
+            .help("Open Dashboard (⌘,)")
             Button { NSApp.terminate(nil) } label: { Image(systemName: "power") }
                 .buttonStyle(ToolbarIconButtonStyle())
                 .help("Quit AI Usage (⌘Q)")
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.top, 0)
+        .padding(.bottom, 12)
     }
 
     @ViewBuilder private var selectedSummary: some View {
@@ -126,9 +140,6 @@ struct CompactMenuContentView: View {
                             InsightPill(icon: "clock.arrow.circlepath", title: "Resets in", value: window.resetCountdown() ?? "—")
                         }
                     }
-                    if let today = viewModel.codexTodayUsage {
-                        CodexTodayRow(usage: today)
-                    }
                     if let optionalDetail = optionalCodexDetail(snapshot) {
                         HStack(spacing: 6) {
                             Image(systemName: optionalDetail.icon).foregroundStyle(Theme.autoModels)
@@ -139,7 +150,7 @@ struct CompactMenuContentView: View {
                         .font(.system(size: 10))
                         .padding(.horizontal, 9)
                         .padding(.vertical, 7)
-                        .background(Theme.contentSurface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .compactCardSurface(tint: Theme.autoModels, radius: 8)
                     }
                     freshnessRow(snapshot.fetchedAt)
                 }
@@ -156,6 +167,20 @@ struct CompactMenuContentView: View {
         case .codex:
             if viewModel.codexError != nil { return "Last refresh failed" }
             return CodexTokenStore.hasCredentials ? "Connected" : "Not connected"
+        }
+    }
+
+    private var headerStatusColor: Color {
+        if viewModel.isSelectedServiceLoading { return Theme.warning }
+        switch viewModel.selectedService {
+        case .cursor:
+            return viewModel.cursorError == nil && SessionTokenStore.hasToken
+                ? Theme.includedValue
+                : Theme.textTertiary
+        case .codex:
+            return viewModel.codexError == nil && CodexTokenStore.hasCredentials
+                ? Theme.includedValue
+                : Theme.textTertiary
         }
     }
 
@@ -212,7 +237,93 @@ struct CompactMenuContentView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 116)
         .padding(12)
-        .background(Theme.contentSurface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .compactCardSurface(tint: connected ? Theme.warning : Theme.accent)
+    }
+}
+
+private struct ServiceSelector: View {
+    @Binding var selection: TrackedService
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(TrackedService.allCases) { service in
+                ServiceSelectorSegment(
+                    service: service,
+                    isSelected: selection == service,
+                    colorScheme: colorScheme
+                ) {
+                    selection = service
+                }
+            }
+        }
+        .padding(3)
+        .background(
+            Theme.selectorTrack(for: colorScheme),
+            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(Theme.selectorBorder(for: colorScheme), lineWidth: 0.5)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Usage service")
+    }
+}
+
+private struct ServiceSelectorSegment: View {
+    let service: TrackedService
+    let isSelected: Bool
+    let colorScheme: ColorScheme
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    private var tint: Color {
+        service == .cursor ? Theme.apiModels : Theme.autoModels
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: service.icon)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(isSelected ? tint : Theme.textTertiary)
+                Text(service.title)
+                    .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
+                    .foregroundStyle(isSelected ? Theme.textPrimary : Theme.textSecondary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 28)
+            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Theme.selectorSelection(for: colorScheme))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(tint.opacity(colorScheme == .dark ? 0.09 : 0.055))
+                        }
+                        .shadow(
+                            color: Theme.selectorShadow(for: colorScheme),
+                            radius: 2,
+                            y: 1
+                        )
+                } else if isHovered {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Theme.selectorHover(for: colorScheme))
+                }
+            }
+            .overlay {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(tint.opacity(colorScheme == .dark ? 0.25 : 0.14), lineWidth: 0.5)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .accessibilityLabel(service.title)
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
     }
 }
 
@@ -228,7 +339,7 @@ private struct CompactUsageSummary: View {
             HStack {
                 Label(plan, systemImage: "sparkles")
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.textSecondary)
                 Spacer()
                 StatusBadge(text: statusText, color: statusColor)
             }
@@ -244,20 +355,20 @@ private struct CompactUsageSummary: View {
             VStack(spacing: 6) {
                 UsageProgressBar(progress: percent, pacePercent: pacePercent, tint: Theme.usageColor(percent: percent))
                 HStack {
-                    if let pacePercent { Text(paceText(pacePercent)) }
+                    if let pacePercent {
+                        Label(paceText(pacePercent), systemImage: "speedometer")
+                    }
                     Spacer()
-                    if let resetText { Text(resetText) }
+                    if let resetText {
+                        Label(resetText, systemImage: "calendar")
+                    }
                 }
                 .font(.system(size: 9))
-                .foregroundStyle(Theme.textTertiary)
+                .foregroundStyle(Theme.textSecondary)
             }
         }
         .padding(14)
-        .background(Theme.contentSurface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Theme.separator.opacity(0.2), lineWidth: 0.5)
-        }
+        .compactCardSurface(tint: Theme.usageColor(percent: percent), radius: 11)
     }
 
     private var statusText: String {
@@ -312,54 +423,24 @@ private struct InsightPill: View {
     let value: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 6) {
             Image(systemName: icon)
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(Theme.accent)
+                .frame(width: 22, height: 22)
+                .background(Theme.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             Text(value)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
             Text(title)
-                .font(.system(size: 8))
-                .foregroundStyle(Theme.textTertiary)
+                .font(.system(size: 9))
+                .foregroundStyle(Theme.textSecondary)
                 .lineLimit(1)
         }
-        .padding(9)
-        .frame(maxWidth: .infinity, minHeight: 62, alignment: .leading)
-        .background(Theme.contentSurface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-}
-
-private struct CodexTodayRow: View {
-    let usage: CodexDailyUsage
-
-    var body: some View {
-        HStack(spacing: 9) {
-            Image(systemName: "sun.max.fill")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.warning)
-                .frame(width: 26, height: 26)
-                .background(Theme.warning.opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Observed today").font(.system(size: 10, weight: .medium))
-                Text("Tracking since \(usage.firstObservedAt.formatted(date: .omitted, time: .shortened))")
-                    .font(.system(size: 8)).foregroundStyle(Theme.textTertiary)
-            }
-            Spacer()
-            Text(observedValue)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-            Text("of window")
-                .font(.system(size: 8)).foregroundStyle(Theme.textTertiary)
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
-        .background(Theme.contentSurface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .help("Locally observed change in Codex quota usage since the first app refresh today; not an official daily total.")
-    }
-
-    private var observedValue: String {
-        usage.displayValue
+        .padding(10)
+        .frame(maxWidth: .infinity, minHeight: 82, alignment: .leading)
+        .compactCardSurface(tint: Theme.accent, radius: 9)
     }
 }

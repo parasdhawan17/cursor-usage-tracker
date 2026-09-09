@@ -12,6 +12,8 @@ enum Theme {
     static let chipBackground = systemFillColor
     static let contentSurface = Color(nsColor: .controlBackgroundColor).opacity(0.72)
     static let elevatedSurface = Color(nsColor: .textBackgroundColor)
+    static let insetSurface = Color(nsColor: .underPageBackgroundColor).opacity(0.72)
+    static let headerSurface = Color(nsColor: .windowBackgroundColor).opacity(0.18)
     static let dashboardBackground = Color(nsColor: .windowBackgroundColor)
     static let separator = Color(nsColor: .separatorColor)
     static let warning = Color(nsColor: .systemOrange)
@@ -36,6 +38,54 @@ enum Theme {
 
     static func heroTint(percent: Double) -> Color {
         usageColor(percent: percent).opacity(0.12)
+    }
+
+    static func selectorTrack(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark
+            ? Color.white.opacity(0.075)
+            : Color.black.opacity(0.055)
+    }
+
+    static func selectorSelection(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark
+            ? Color.white.opacity(0.13)
+            : Color.white.opacity(0.9)
+    }
+
+    static func selectorHover(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark
+            ? Color.white.opacity(0.06)
+            : Color.black.opacity(0.035)
+    }
+
+    static func selectorBorder(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark
+            ? Color.white.opacity(0.1)
+            : Color.black.opacity(0.08)
+    }
+
+    static func selectorShadow(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark
+            ? Color.black.opacity(0.42)
+            : Color.black.opacity(0.12)
+    }
+
+    static func compactCardSurface(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark
+            ? Color(nsColor: .controlBackgroundColor).opacity(0.94)
+            : Color.white.opacity(0.88)
+    }
+
+    static func compactCardBorder(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark
+            ? Color.white.opacity(0.11)
+            : Color.black.opacity(0.065)
+    }
+
+    static func compactCardShadow(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark
+            ? Color.black.opacity(0.34)
+            : Color.black.opacity(0.075)
     }
 }
 
@@ -111,6 +161,38 @@ struct GlassPanelBackground: ViewModifier {
     }
 }
 
+private struct CompactCardSurfaceModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    let tint: Color?
+    let radius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .fill(Theme.compactCardSurface(for: colorScheme))
+                    .overlay {
+                        if let tint {
+                            LinearGradient(
+                                colors: [
+                                    tint.opacity(colorScheme == .dark ? 0.08 : 0.05),
+                                    .clear
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+                        }
+                    }
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .strokeBorder(Theme.compactCardBorder(for: colorScheme), lineWidth: 0.5)
+            }
+            .shadow(color: Theme.compactCardShadow(for: colorScheme), radius: 3, y: 1)
+    }
+}
+
 extension View {
     func glassPanelBackground() -> some View {
         modifier(GlassPanelBackground())
@@ -118,6 +200,10 @@ extension View {
 
     func sectionCardBackground(roundsBottom: Bool = true) -> some View {
         modifier(SectionCardBackground(roundsBottom: roundsBottom))
+    }
+
+    func compactCardSurface(tint: Color? = nil, radius: CGFloat = 10) -> some View {
+        modifier(CompactCardSurfaceModifier(tint: tint, radius: radius))
     }
 }
 
@@ -135,11 +221,22 @@ struct SectionHeaderLabel: View {
 }
 
 struct ToolbarIconButtonStyle: ButtonStyle {
+    @State private var isHovered = false
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .frame(width: 28, height: 28)
+            .background {
+                if isHovered || configuration.isPressed {
+                    RoundedRectangle(cornerRadius: GlassMetrics.controlRadius, style: .continuous)
+                        .fill(Theme.chipBackground)
+                }
+            }
             .contentShape(RoundedRectangle(cornerRadius: GlassMetrics.controlRadius, style: .continuous))
             .opacity(configuration.isPressed ? 0.65 : 1)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .onHover { isHovered = $0 }
     }
 }
 
