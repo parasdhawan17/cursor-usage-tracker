@@ -112,6 +112,18 @@ struct CompactMenuContentView: View {
             } else {
                 compactEmpty(service: .codex, connected: CodexTokenStore.hasCredentials, error: viewModel.codexError)
             }
+        case .claude:
+            if let snapshot = viewModel.claudeSnapshot, let percent = snapshot.primaryPercent {
+                CompactUsageSummary(
+                    plan: "Session limit",
+                    percent: percent,
+                    pacePercent: snapshot.sessionWindow?.evenPacePercent(),
+                    resetText: snapshot.sessionWindow?.resetDescription.map { "Resets \($0)" },
+                    isAllowed: true
+                )
+            } else {
+                compactEmpty(service: .claude, connected: ClaudeTokenStore.hasCredentials, error: viewModel.claudeError)
+            }
         }
     }
 
@@ -155,6 +167,34 @@ struct CompactMenuContentView: View {
                     freshnessRow(snapshot.fetchedAt)
                 }
             }
+        case .claude:
+            if let snapshot = viewModel.claudeSnapshot {
+                VStack(alignment: .leading, spacing: 7) {
+                    SectionHeaderLabel(title: "At a glance")
+                    HStack(spacing: 8) {
+                        if let session = snapshot.sessionWindow {
+                            InsightPill(icon: "gauge.with.dots.needle.33percent", title: "Session left", value: UsageSnapshot.formatPercent(session.remainingPercent))
+                            InsightPill(icon: "clock.arrow.circlepath", title: "Resets in", value: session.resetCountdown() ?? "—")
+                        }
+                        if let weekly = snapshot.weeklyWindow {
+                            InsightPill(icon: "calendar", title: "Week left", value: UsageSnapshot.formatPercent(weekly.remainingPercent))
+                        }
+                    }
+                    if let local = viewModel.claudeLocalUsage {
+                        HStack(spacing: 6) {
+                            Image(systemName: "terminal").foregroundStyle(Theme.claudeModels)
+                            Text("Claude Code today").foregroundStyle(.secondary)
+                            Spacer()
+                            Text(local.totalTokens.formatted(.number.notation(.compactName)) + " tokens").fontWeight(.semibold)
+                        }
+                        .font(.system(size: 10))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 7)
+                        .compactCardSurface(tint: Theme.claudeModels, radius: 8)
+                    }
+                    freshnessRow(snapshot.fetchedAt)
+                }
+            }
         }
     }
 
@@ -167,6 +207,9 @@ struct CompactMenuContentView: View {
         case .codex:
             if viewModel.codexError != nil { return "Last refresh failed" }
             return CodexTokenStore.hasCredentials ? "Connected" : "Not connected"
+        case .claude:
+            if viewModel.claudeError != nil { return "Last refresh failed" }
+            return ClaudeTokenStore.hasCredentials ? "Connected" : "Not connected"
         }
     }
 
@@ -179,6 +222,10 @@ struct CompactMenuContentView: View {
                 : Theme.textTertiary
         case .codex:
             return viewModel.codexError == nil && CodexTokenStore.hasCredentials
+                ? Theme.includedValue
+                : Theme.textTertiary
+        case .claude:
+            return viewModel.claudeError == nil && ClaudeTokenStore.hasCredentials
                 ? Theme.includedValue
                 : Theme.textTertiary
         }
@@ -279,9 +326,7 @@ private struct ServiceSelectorSegment: View {
 
     @State private var isHovered = false
 
-    private var tint: Color {
-        service == .cursor ? Theme.apiModels : Theme.autoModels
-    }
+    private var tint: Color { service.tint }
 
     var body: some View {
         Button(action: action) {
@@ -394,7 +439,7 @@ struct ServiceIcon: View {
     var size: CGFloat = 32
 
     var body: some View {
-        let color = service == .cursor ? Theme.apiModels : Theme.autoModels
+        let color = service.tint
         Image(systemName: service.icon)
             .font(.system(size: size * 0.43, weight: .semibold))
             .foregroundStyle(color)

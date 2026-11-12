@@ -22,6 +22,7 @@ enum Theme {
     static let includedValue = Color(nsColor: .systemGreen)
     static let apiModels = Color(nsColor: .systemBlue)
     static let autoModels = Color(nsColor: .systemPurple)
+    static let claudeModels = Color(nsColor: .systemTeal)
 
     private static var systemFillColor: Color {
         if #available(macOS 14.0, *) {
@@ -272,5 +273,16 @@ struct InsetGroupedCard<Content: View>: View {
             .padding(.vertical, 4)
             .frame(maxWidth: .infinity, alignment: .leading)
             .sectionCardBackground(roundsBottom: roundsBottom)
+    }
+}
+
+extension TrackedService {
+    /// Accent colour shared by the service selector, icons and dashboard pages.
+    var tint: Color {
+        switch self {
+        case .cursor: return Theme.apiModels
+        case .codex: return Theme.autoModels
+        case .claude: return Theme.claudeModels
+        }
     }
 }
