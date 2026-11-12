@@ -5,6 +5,7 @@ enum DashboardPage: String, CaseIterable, Identifiable {
     case overview
     case cursor
     case codex
+    case claude
     case settings
 
     var id: String { rawValue }
@@ -14,6 +15,7 @@ enum DashboardPage: String, CaseIterable, Identifiable {
         case .overview: return "rectangle.grid.2x2"
         case .cursor: return "cursorarrow.rays"
         case .codex: return "chevron.left.forwardslash.chevron.right"
+        case .claude: return "sparkles"
         case .settings: return "gearshape"
         }
     }
@@ -23,6 +25,7 @@ enum DashboardPage: String, CaseIterable, Identifiable {
         case .overview: return Theme.accent
         case .cursor: return Theme.apiModels
         case .codex: return Theme.autoModels
+        case .claude: return Theme.claudeModels
         case .settings: return Theme.textSecondary
         }
     }
@@ -42,7 +45,7 @@ struct DashboardRootView: View {
             VStack(spacing: 0) {
                 List(selection: $navigation.page) {
                     Section("Monitor") {
-                        ForEach([DashboardPage.overview, .cursor, .codex]) { page in
+                        ForEach([DashboardPage.overview, .cursor, .codex, .claude]) { page in
                             Label {
                                 Text(page.title)
                             } icon: {
@@ -65,6 +68,7 @@ struct DashboardRootView: View {
                         .tracking(0.5)
                     connectionRow(.cursor, connected: SessionTokenStore.hasToken)
                     connectionRow(.codex, connected: CodexTokenStore.hasCredentials)
+                    connectionRow(.claude, connected: ClaudeTokenStore.hasCredentials)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
@@ -79,6 +83,7 @@ struct DashboardRootView: View {
                 case .overview: OverviewDashboardView(viewModel: viewModel)
                 case .cursor: CursorDashboardView(viewModel: viewModel)
                 case .codex: CodexDashboardView(viewModel: viewModel)
+                case .claude: ClaudeDashboardView(viewModel: viewModel)
                 case .settings: SettingsDashboardView(viewModel: viewModel)
                 }
             }
@@ -89,7 +94,7 @@ struct DashboardRootView: View {
                 Button { Task { await viewModel.refreshAll() } } label: {
                     Label("Refresh all", systemImage: "arrow.clockwise")
                 }
-                .disabled(viewModel.isCursorLoading || viewModel.isCodexLoading)
+                .disabled(viewModel.isCursorLoading || viewModel.isCodexLoading || viewModel.isClaudeLoading)
                 .keyboardShortcut("r", modifiers: [.command])
                 .help("Refresh all services (⌘R)")
             }
@@ -218,6 +223,17 @@ struct OverviewDashboardView: View {
                 ) {
                     Task { await viewModel.refreshCodex() }
                 }
+                OverviewServiceCard(
+                    service: .claude,
+                    isConnected: ClaudeTokenStore.hasCredentials,
+                    plan: nil,
+                    percent: viewModel.claudeSnapshot?.primaryPercent,
+                    detail: claudeDetail,
+                    fetchedAt: viewModel.claudeSnapshot?.fetchedAt,
+                    error: viewModel.claudeError
+                ) {
+                    Task { await viewModel.refreshClaude() }
+                }
             }
 
             if viewModel.hasAnyConnection {
@@ -240,7 +256,7 @@ struct OverviewDashboardView: View {
             if !viewModel.hasAnyConnection {
                 DashboardEmptyState(
                     title: "Connect an account",
-                    message: "Open Settings to connect Cursor or the experimental Codex integration.",
+                    message: "Open Settings to connect Cursor, the experimental Codex integration or Claude.",
                     icon: "link.badge.plus"
                 )
             }
@@ -259,6 +275,12 @@ struct OverviewDashboardView: View {
         guard let snapshot = viewModel.codexSnapshot else { return nil }
         if let reset = snapshot.primaryWindow?.resetDescription { return "Primary window resets \(reset)" }
         return snapshot.isAllowed ? "Codex is currently available" : "Codex is currently limited"
+    }
+
+    private var claudeDetail: String? {
+        guard let snapshot = viewModel.claudeSnapshot else { return nil }
+        if let reset = snapshot.sessionWindow?.resetDescription { return "Session limit resets \(reset)" }
+        return "Claude usage limits"
     }
 }
 
@@ -467,6 +489,87 @@ struct CodexDashboardView: View {
     }
 }
 
+struct ClaudeDashboardView: View {
+    @ObservedObject var viewModel: UsageViewModel
+
+    var body: some View {
+        DashboardPageContainer(
+            title: "Claude",
+            subtitle: "Plan limits from Claude, plus today's Claude Code activity on this Mac.",
+            icon: DashboardPage.claude.icon,
+            tint: DashboardPage.claude.tint
+        ) {
+            if let snapshot = viewModel.claudeSnapshot {
+                if let percent = snapshot.primaryPercent {
+                    UsageHeroCard(
+                        title: "Session limit (5 hours)",
+                        percent: percent,
+                        pacePercent: snapshot.sessionWindow?.evenPacePercent(),
+                        resetText: snapshot.sessionWindow?.resetDescription.map { "Resets \($0)" },
+                        updatedAt: snapshot.fetchedAt
+                    )
+                }
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 12)], spacing: 12) {
+                    if let weekly = snapshot.weeklyWindow {
+                        DashboardMetricCard(
+                            title: "Weekly limit",
+                            value: "\(Int(weekly.usedPercent.rounded()))% used",
+                            detail: weekly.resetCountdown().map { "Resets in \($0)" } ?? "Reset not reported",
+                            icon: "calendar",
+                            tint: Theme.claudeModels
+                        )
+                        DashboardMetricCard(
+                            title: "Weekly allowance left",
+                            value: UsageSnapshot.formatPercent(weekly.remainingPercent),
+                            detail: "in the current week",
+                            icon: "arrow.down.circle",
+                            tint: Theme.includedValue
+                        )
+                    }
+                    if let local = viewModel.claudeLocalUsage {
+                        DashboardMetricCard(
+                            title: "Tokens today",
+                            value: Self.compact(local.totalTokens),
+                            detail: "\(local.messages) Claude Code messages",
+                            icon: "sun.max.fill",
+                            tint: Theme.warning
+                        )
+                        DashboardMetricCard(
+                            title: "Output tokens today",
+                            value: Self.compact(local.outputTokens),
+                            detail: "generated by Claude",
+                            icon: "text.alignleft",
+                            tint: Theme.apiModels
+                        )
+                    }
+                }
+                if let local = viewModel.claudeLocalUsage, !local.tokensByModel.isEmpty {
+                    DashboardCard {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Tokens today by model").font(.system(size: 12, weight: .semibold))
+                            ForEach(local.tokensByModel.sorted { $0.value > $1.value }, id: \.key) { model, tokens in
+                                HStack {
+                                    Text(model).font(.system(size: 11))
+                                    Spacer()
+                                    Text(Self.compact(tokens)).font(.system(size: 11, weight: .medium)).monospacedDigit()
+                                }
+                            }
+                            Text("Counts input, output and cache tokens from local Claude Code logs. Cost is not estimated.")
+                                .font(.system(size: 10)).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            } else {
+                ServiceEmptyState(service: .claude, connected: ClaudeTokenStore.hasCredentials, error: viewModel.claudeError) { Task { await viewModel.refreshClaude() } }
+            }
+        }
+    }
+
+    private static func compact(_ value: Int) -> String {
+        value.formatted(.number.notation(.compactName))
+    }
+}
+
 struct UsageHeroCard: View {
     let title: String
     let percent: Double
@@ -622,6 +725,7 @@ struct SettingsDashboardView: View {
             }
             DashboardSection(title: "Cursor", subtitle: "Dashboard session connection") { cursorSettings }
             DashboardSection(title: "Codex", subtitle: "Experimental ChatGPT account connection") { codexSettings }
+            DashboardSection(title: "Claude", subtitle: "Experimental Claude Code account connection") { claudeSettings }
             DashboardSection(title: "App", subtitle: "Background behavior and launch preferences") { appSettings }
             DashboardSection(title: "Updates", subtitle: "Version and release installation") { updateSettings }
         }
@@ -674,6 +778,35 @@ struct SettingsDashboardView: View {
             if let error = viewModel.codexSaveError { InlineNotice(text: error, icon: "exclamationmark.triangle.fill", color: Theme.destructive) }
             if let error = viewModel.codexAutoFillError { InlineNotice(text: error, icon: "exclamationmark.triangle.fill", color: Theme.destructive) }
             InlineNotice(text: "This unsupported integration depends on an internal endpoint and may change without notice.", icon: "flask.fill", color: Theme.warning)
+        }
+    }
+
+    private var claudeSettings: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            connectionHeader(service: .claude, connected: ClaudeTokenStore.hasCredentials, detail: "Claude Code OAuth connection")
+            Divider().opacity(0.55)
+            CredentialGuide(service: .claude)
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Claude Code credentials").font(.system(size: 11, weight: .medium))
+                    Text("Read accessToken from Claude Code's Keychain item, or ~/.claude/.credentials.json.")
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Auto fill") { viewModel.autoFillClaudeCredentials() }
+                    .buttonStyle(.bordered)
+            }
+            SettingsFieldLabel(title: "OAuth access token", detail: "Required")
+            SecureField("OAuth access token", text: $viewModel.claudeAccessTokenInput)
+                .textFieldStyle(.roundedBorder)
+            HStack(spacing: 10) {
+                Button(ClaudeTokenStore.hasCredentials ? "Replace Claude token" : "Save Claude token") { Task { await viewModel.saveClaudeCredentials() } }
+                    .buttonStyle(.borderedProminent)
+                if ClaudeTokenStore.hasCredentials { Button("Remove", role: .destructive) { viewModel.removeClaudeConnection() }.buttonStyle(.bordered) }
+            }
+            if let error = viewModel.claudeSaveError { InlineNotice(text: error, icon: "exclamationmark.triangle.fill", color: Theme.destructive) }
+            if let error = viewModel.claudeAutoFillError { InlineNotice(text: error, icon: "exclamationmark.triangle.fill", color: Theme.destructive) }
+            InlineNotice(text: "Unsupported integration. Claude Code tokens expire; run Claude Code and Auto fill again if usage stops updating.", icon: "flask.fill", color: Theme.warning)
         }
     }
 
@@ -817,6 +950,7 @@ private struct CredentialGuide: View {
 
     private static let cursorDashboardURL = URL(string: "https://cursor.com/dashboard/usage")!
     private static let codexURL = URL(string: "https://chatgpt.com/codex")!
+    private static let claudeCodeURL = URL(string: "https://claude.com/claude-code")!
 
     var body: some View {
         DisclosureGroup {
@@ -824,6 +958,7 @@ private struct CredentialGuide: View {
                 switch service {
                 case .cursor: cursorSteps
                 case .codex: codexSteps
+                case .claude: claudeSteps
                 }
             }
             .padding(.top, 6)
@@ -855,6 +990,21 @@ private struct CredentialGuide: View {
             credentialStep(2, "Locate your Codex OAuth record", "For Codex CLI, credentials are stored in ~/.codex/auth.json. Use Auto fill below to read the access_token and account_id fields.")
             credentialStep(3, "Review and connect", "Check the populated fields, then select Save Codex credentials. The app never saves your refresh token.")
             Label("Use an OAuth access token—not a browser cookie.", systemImage: "lock.shield")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(Theme.warning)
+                .padding(.leading, 30)
+        }
+    }
+
+    private var claudeSteps: some View {
+        Group {
+            credentialStep(1, "Sign in to Claude Code", "Sign in with your Claude subscription in Claude Code, so it creates a local OAuth session.") {
+                Button("Open Claude Code") { NSWorkspace.shared.open(Self.claudeCodeURL) }
+                    .controlSize(.small)
+            }
+            credentialStep(2, "Locate Claude Code's OAuth record", "Claude Code keeps it in the macOS Keychain (item “Claude Code-credentials”), or in ~/.claude/.credentials.json. Auto fill reads accessToken only; macOS may ask you to allow access.")
+            credentialStep(3, "Review and connect", "Check the populated field, then select Save Claude token. The app never saves your refresh token.")
+            Label("Use the accessToken value only—not the surrounding JSON.", systemImage: "lock.shield")
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(Theme.warning)
                 .padding(.leading, 30)

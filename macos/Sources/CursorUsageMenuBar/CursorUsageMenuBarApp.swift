@@ -48,7 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             markFirstLaunchHintSeen()
             splash?.setStatus(
                 "Opening dashboard…",
-                detail: "Connect Cursor or Codex to start tracking usage."
+                detail: "Connect Cursor, Codex or Claude to start tracking usage."
             )
         } else {
             splash?.setStatus("Connecting to Cursor…", detail: "Fetching your usage summary.")
@@ -99,17 +99,25 @@ final class UsageViewModel: ObservableObject {
     @Published private(set) var codexTodayUsage: CodexDailyUsage?
     @Published private(set) var codexError: String?
     @Published private(set) var isCodexLoading = false
+    @Published private(set) var claudeSnapshot: ClaudeUsageSnapshot?
+    @Published private(set) var claudeLocalUsage: ClaudeLocalUsage?
+    @Published private(set) var claudeError: String?
+    @Published private(set) var isClaudeLoading = false
     @Published var selectedService: TrackedService = .selected {
         didSet { TrackedService.selected = selectedService }
     }
     @Published var cursorTokenInput = ""
     @Published var codexAccessTokenInput = ""
     @Published var codexAccountIDInput = ""
+    @Published var claudeAccessTokenInput = ""
     @Published private(set) var cursorSaveError: String?
     @Published private(set) var codexSaveError: String?
     @Published private(set) var codexAutoFillError: String?
+    @Published private(set) var claudeSaveError: String?
+    @Published private(set) var claudeAutoFillError: String?
     @Published private(set) var isSavingCursor = false
     @Published private(set) var isSavingCodex = false
+    @Published private(set) var isSavingClaude = false
     @Published private(set) var launchAtLoginEnabled = LaunchAtLoginSettings.isEnabled
     @Published private(set) var launchAtLoginError: String?
     @Published private(set) var caffeinateEnabled = CaffeinateSettings.isEnabled
@@ -127,9 +135,12 @@ final class UsageViewModel: ObservableObject {
     private var refreshTask: Task<Void, Never>?
     private var cursorFetchTask: Task<Void, Never>?
     private var codexFetchTask: Task<Void, Never>?
+    private var claudeFetchTask: Task<Void, Never>?
     private var lastFetchAttempt: [TrackedService: Date] = [:]
 
-    var hasAnyConnection: Bool { SessionTokenStore.hasToken || CodexTokenStore.hasCredentials }
+    var hasAnyConnection: Bool {
+        SessionTokenStore.hasToken || CodexTokenStore.hasCredentials || ClaudeTokenStore.hasCredentials
+    }
 
     var menuBarLabel: String {
         switch selectedService {
@@ -139,6 +150,9 @@ final class UsageViewModel: ObservableObject {
         case .codex:
             if let snapshot = codexSnapshot { return snapshot.menuBarLabel }
             return CodexTokenStore.hasCredentials ? "Codex …" : "Codex"
+        case .claude:
+            if let snapshot = claudeSnapshot { return snapshot.menuBarLabel }
+            return ClaudeTokenStore.hasCredentials ? "Claude …" : "Claude"
         }
     }
 
@@ -152,11 +166,18 @@ final class UsageViewModel: ObservableObject {
         case .codex:
             if let percent = codexSnapshot?.primaryPercent { return "\(Int(percent.rounded()))%" }
             return CodexTokenStore.hasCredentials ? "…" : "—"
+        case .claude:
+            if let percent = claudeSnapshot?.primaryPercent { return "\(Int(percent.rounded()))%" }
+            return ClaudeTokenStore.hasCredentials ? "…" : "—"
         }
     }
 
     var isSelectedServiceLoading: Bool {
-        selectedService == .cursor ? isCursorLoading : isCodexLoading
+        switch selectedService {
+        case .cursor: return isCursorLoading
+        case .codex: return isCodexLoading
+        case .claude: return isClaudeLoading
+        }
     }
 
     var menuBarToolTip: String {
@@ -168,6 +189,12 @@ final class UsageViewModel: ObservableObject {
                 return "Codex \(snapshot.primaryPercent.map { Int($0.rounded()).description + "% used" } ?? "usage") — resets \(reset)"
             }
             return "Codex usage"
+        case .claude:
+            guard let snapshot = claudeSnapshot else { return "Claude usage" }
+            if let reset = snapshot.sessionWindow?.resetDescription {
+                return "Claude \(snapshot.primaryPercent.map { Int($0.rounded()).description + "% used" } ?? "usage") — session resets \(reset)"
+            }
+            return "Claude usage"
         }
     }
 
@@ -227,10 +254,46 @@ final class UsageViewModel: ObservableObject {
         }
     }
 
+    func saveClaudeCredentials() async {
+        let token = claudeAccessTokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else {
+            claudeSaveError = ClaudeTokenStore.StoreError.emptyToken.localizedDescription
+            return
+        }
+        isSavingClaude = true
+        claudeSaveError = nil
+        defer { isSavingClaude = false }
+        do {
+            try ClaudeTokenStore.save(accessToken: token)
+            claudeAccessTokenInput = ""
+            startAutoRefresh()
+            await refreshClaude()
+        } catch {
+            claudeSaveError = error.localizedDescription
+        }
+    }
+
+    func autoFillClaudeCredentials() {
+        claudeAutoFillError = nil
+        claudeSaveError = nil
+        do {
+            claudeAccessTokenInput = try ClaudeTokenStore.loadFromClaudeCode()
+        } catch {
+            claudeAutoFillError = error.localizedDescription
+        }
+    }
+
     func removeCursorConnection() {
         SessionTokenStore.delete()
         cursorSnapshot = nil
         cursorError = nil
+    }
+
+    func removeClaudeConnection() {
+        ClaudeTokenStore.delete()
+        claudeSnapshot = nil
+        claudeLocalUsage = nil
+        claudeError = nil
     }
 
     func removeCodexConnection() {
@@ -291,13 +354,15 @@ final class UsageViewModel: ObservableObject {
     func refreshAll() async {
         async let cursor: Void = refreshCursor()
         async let codex: Void = refreshCodex()
-        _ = await (cursor, codex)
+        async let claude: Void = refreshClaude()
+        _ = await (cursor, codex, claude)
     }
 
     func refresh(_ service: TrackedService) async {
         switch service {
         case .cursor: await refreshCursor()
         case .codex: await refreshCodex()
+        case .claude: await refreshClaude()
         }
     }
 
@@ -352,19 +417,48 @@ final class UsageViewModel: ObservableObject {
         await codexFetchTask?.value
     }
 
+    func refreshClaude() async {
+        guard ClaudeTokenStore.hasCredentials else { return }
+        if let existing = claudeFetchTask {
+            await existing.value
+            return
+        }
+        let showLoading = claudeSnapshot == nil
+        if showLoading { isClaudeLoading = true; claudeError = nil }
+        lastFetchAttempt[.claude] = Date()
+        claudeFetchTask = Task {
+            defer {
+                claudeFetchTask = nil
+                if showLoading { isClaudeLoading = false }
+            }
+            do {
+                let snapshot = try await ClaudeUsageFetcher.fetch()
+                claudeSnapshot = snapshot
+                claudeError = nil
+            } catch {
+                claudeError = error.localizedDescription
+            }
+            // Local logs are independent of the network call, so refresh them even if the fetch failed.
+            claudeLocalUsage = await Task.detached(priority: .utility) {
+                ClaudeLocalUsageScanner.scanToday()
+            }.value
+        }
+        await claudeFetchTask?.value
+    }
+
     /// Keeps the launch splash visible until the first usage fetch finishes or times out.
     func waitForInitialLoadIfNeeded() async {
         guard hasAnyConnection else { return }
         let deadline = Date().addingTimeInterval(45)
 
         for _ in 0..<30 {
-            if isCursorLoading || isCodexLoading || cursorFetchTask != nil || codexFetchTask != nil || cursorSnapshot != nil || codexSnapshot != nil || cursorError != nil || codexError != nil { break }
+            if isCursorLoading || isCodexLoading || isClaudeLoading || cursorFetchTask != nil || codexFetchTask != nil || claudeFetchTask != nil || cursorSnapshot != nil || codexSnapshot != nil || claudeSnapshot != nil || cursorError != nil || codexError != nil || claudeError != nil { break }
             try? await Task.sleep(nanoseconds: 50_000_000)
         }
 
         while Date() < deadline {
-            if cursorSnapshot != nil || codexSnapshot != nil || cursorError != nil || codexError != nil { return }
-            if !isCursorLoading && !isCodexLoading && cursorFetchTask == nil && codexFetchTask == nil { return }
+            if cursorSnapshot != nil || codexSnapshot != nil || claudeSnapshot != nil || cursorError != nil || codexError != nil || claudeError != nil { return }
+            if !isCursorLoading && !isCodexLoading && !isClaudeLoading && cursorFetchTask == nil && codexFetchTask == nil && claudeFetchTask == nil { return }
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
     }

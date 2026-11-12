@@ -1,6 +1,6 @@
 # Cursor + Codex Usage Tracker
 
-A lightweight macOS menu-bar utility for monitoring [Cursor](https://cursor.com) and Codex plan usage. It keeps quick status in the menu bar and provides a native dashboard window for service-specific details and settings.
+A lightweight macOS menu-bar utility for monitoring [Cursor](https://cursor.com), Codex and Claude plan usage. It keeps quick status in the menu bar and provides a native dashboard window for service-specific details and settings.
 
 > **Unofficial integrations.** Cursor and Codex usage are read from undocumented dashboard endpoints that can change at any time. Use your own accounts only. This project is not affiliated with or endorsed by Cursor or OpenAI.
 
@@ -27,15 +27,15 @@ Native SwiftUI utility for **macOS 13+** (Apple Silicon and Intel). Runs as a me
 
 | What you get | Details |
 |---|---|
-| **Dual-service dashboard** | Separate Overview, Cursor, Codex, and Settings pages in a native macOS window |
-| **Live usage in the menu bar** | Shows your selected Cursor or Codex service at a glance |
+| **Multi-service dashboard** | Separate Overview, Cursor, Codex, Claude, and Settings pages in a native macOS window |
+| **Live usage in the menu bar** | Shows your selected Cursor, Codex or Claude service at a glance |
 | **Plan overview** | Usage %, progress bar with even-pace marker, plan name, and days left in the billing cycle |
 | **Usage costs** | Billed (on-demand) vs included usage value — toggle between **Today** and **This cycle** |
 | **Model split** | Breakdown of API models vs Auto models as a share of plan usage |
 | **Auto-refresh** | Background updates every 1–5 minutes (configurable in the panel) |
 | **Offline-friendly** | Shows cached data with a warning if a refresh fails |
 | **In-app updates** | Checks GitHub Releases and offers the latest DMG from the menu bar panel |
-| **Separate secure credentials** | Cursor and Codex credentials are saved separately in Application Support (mode `600`) |
+| **Separate secure credentials** | Cursor, Codex and Claude credentials are saved separately in Application Support (mode `600`) |
 
 ### Python CLI
 
@@ -75,6 +75,10 @@ On first launch you'll see a **gear icon** in the menu bar. Click it, paste your
 4. Paste it into the app setup panel, or into a `.env` file for the CLI (see below)
 
 Tokens expire periodically. If you see an auth error, grab a fresh cookie from the dashboard and save it again via **Session** in the panel footer.
+
+### Claude (experimental)
+
+Claude tracking uses the OAuth usage endpoint that Claude Code itself calls (`api.anthropic.com/api/oauth/usage`). It shows the 5-hour session limit, the 7-day weekly limit, and today's token totals from your local Claude Code logs (`~/.claude/projects`), which are read on this Mac only. Cost is not estimated. Open **Dashboard → Settings → Claude** and select **Auto fill**; the token is read from Claude Code's Keychain item (`Claude Code-credentials`) or `~/.claude/.credentials.json`, and macOS may ask you to allow access. Claude Code tokens expire, so run Claude Code and Auto fill again when usage stops updating.
 
 ### Codex (experimental)
 

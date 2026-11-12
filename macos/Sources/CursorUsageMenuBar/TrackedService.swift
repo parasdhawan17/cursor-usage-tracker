@@ -3,6 +3,7 @@ import Foundation
 enum TrackedService: String, CaseIterable, Identifiable {
     case cursor
     case codex
+    case claude
 
     var id: String { rawValue }
 
@@ -10,6 +11,7 @@ enum TrackedService: String, CaseIterable, Identifiable {
         switch self {
         case .cursor: return "Cursor"
         case .codex: return "Codex"
+        case .claude: return "Claude"
         }
     }
 
@@ -17,6 +19,7 @@ enum TrackedService: String, CaseIterable, Identifiable {
         switch self {
         case .cursor: return "cursorarrow.rays"
         case .codex: return "chevron.left.forwardslash.chevron.right"
+        case .claude: return "sparkles"
         }
     }
 
